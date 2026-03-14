@@ -24,6 +24,9 @@ fi
 
 REMOVED=0
 
+# Clean up temp file on failure
+trap 'rm -f "${SETTINGS_FILE}.tmp"' ERR
+
 for NAME in $HOOKS; do
   MARKER="# hookers:${NAME}"
 
@@ -44,7 +47,6 @@ for NAME in $HOOKS; do
   fi
 
   # Remove hooks containing the marker, clean up empty groups and events
-  trap 'rm -f "${SETTINGS_FILE}.tmp"' ERR
   jq --arg marker "$MARKER" '
     .hooks //= {} |
     # Remove matching hooks from all events

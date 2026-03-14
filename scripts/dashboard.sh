@@ -17,16 +17,16 @@ if [ "$ITEM_COUNT" -eq 0 ]; then
 fi
 
 # Create temp dir for parallel provider results
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+RESULTS_DIR=$(mktemp -d)
+trap 'rm -rf "$RESULTS_DIR"' EXIT
 
 # Launch all providers in parallel
 for ((i=0; i<ITEM_COUNT; i++)); do
   CMD=$(jq -r --argjson i "$i" '.items[$i].command' "$CONFIG")
   TIMEOUT=$(jq -r --argjson i "$i" '.items[$i].timeout // 5' "$CONFIG")
   (
-    VALUE=$(timeout "${TIMEOUT}s" bash -c "$CMD" 2>/dev/null | tr -d '\n' || echo "?")
-    echo -n "$VALUE" > "$TMPDIR/$i"
+    VALUE=$(timeout "${TIMEOUT}s" bash -c "$CMD" 2>/dev/null | tr -d '\n')
+    echo -n "$VALUE" > "$RESULTS_DIR/$i"
   ) &
 done
 wait
@@ -36,7 +36,7 @@ PARTS=()
 for ((i=0; i<ITEM_COUNT; i++)); do
   LABEL=$(jq -r --argjson i "$i" '.items[$i].label' "$CONFIG")
   VALUE=""
-  [ -f "$TMPDIR/$i" ] && VALUE=$(cat "$TMPDIR/$i")
+  [ -f "$RESULTS_DIR/$i" ] && VALUE=$(cat "$RESULTS_DIR/$i")
 
   if [ -n "$VALUE" ]; then
     PARTS+=("${LABEL}: ${VALUE}")

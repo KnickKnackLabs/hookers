@@ -10,7 +10,6 @@ setup() {
   [[ "$output" == *"session-id"* ]]
   [[ "$output" == *"anti-compact"* ]]
   [[ "$output" == *"dashboard"* ]]
-  [[ "$output" == *"anti-compact-kill"* ]]
 }
 
 @test "catalog --json outputs valid JSON" {

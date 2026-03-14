@@ -43,15 +43,6 @@ if [ ${#CATALOG_FILES[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Merge all selected catalog entries into a single hooks object
-DESIRED_HOOKS=$(jq -s '
-  reduce .[] as $entry ({};
-    reduce ($entry.hooks | keys[]) as $event (.;
-      .[$event] = (.[$event] // []) + $entry.hooks[$event]
-    )
-  )
-' "${CATALOG_FILES[@]}")
-
 # Ensure settings file exists
 if [ ! -f "$SETTINGS_FILE" ]; then
   echo "{}" > "$SETTINGS_FILE"
@@ -67,6 +58,8 @@ NEW_FILES=()     # catalog files with no existing marker
 for f in "${CATALOG_FILES[@]}"; do
   NAME=$(jq -r '.name' "$f")
   MARKER="# hookers:${NAME}"
+  # NOTE: assumes each catalog entry has one hook. Multi-hook entries would
+  # need to compare all commands; the marker fallback handles this correctly.
   CMD=$(jq -r '.hooks | to_entries[0].value[0].hooks[0].command' "$f")
 
   # Check if exact command already exists in settings
