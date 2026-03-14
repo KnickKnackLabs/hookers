@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#MISE description="List available hooks in the catalog"
+#USAGE flag "--json" help="Output raw JSON"
+
+set -eu
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CATALOG_DIR="$REPO_DIR/catalog"
+
+if [ ! -d "$CATALOG_DIR" ]; then
+  echo "No catalog directory found" >&2
+  exit 1
+fi
+
+if [ "${usage_json:-false}" = "true" ]; then
+  jq -s '.' "$CATALOG_DIR"/*.json
+  exit 0
+fi
+
+for f in "$CATALOG_DIR"/*.json; do
+  NAME=$(jq -r '.name' "$f")
+  DESC=$(jq -r '.description' "$f")
+  printf "  %-20s %s\n" "$NAME" "$DESC"
+done

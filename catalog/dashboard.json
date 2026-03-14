@@ -1,0 +1,17 @@
+{
+  "name": "dashboard",
+  "description": "Inject a configurable status dashboard into the agent's context on each user prompt",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "hookers dashboard"
+          }
+        ]
+      }
+    ]
+  }
+}

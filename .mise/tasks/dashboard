@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#MISE description="Run the status dashboard (outputs a compact status line)"
+#USAGE flag "--config <path>" help="Path to dashboard config (default: ~/.config/hookers/dashboard.json)"
+
+set -eu
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+if [ -n "${usage_config:-}" ]; then
+  export HOOKERS_DASHBOARD_CONFIG="$usage_config"
+fi
+
+exec bash "$REPO_DIR/scripts/dashboard.sh"
