@@ -1,6 +1,6 @@
 {
   "name": "anti-compact",
-  "description": "Kill the session before context compaction occurs — compaction loses context, better to end cleanly",
+  "description": "Kill the session when context compaction is triggered — compaction loses context, better to end and start fresh",
   "hooks": {
     "PreCompact": [
       {
@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'echo \"[anti-compact] Context compaction triggered — ending session to preserve context integrity.\" >&2; kill $PPID 2>/dev/null; exit 1'"
+            "command": "bash -c '# hookers:anti-compact\necho \"[anti-compact] Context compaction triggered — killing session.\" >&2; kill $PPID 2>/dev/null; exit 2'"
           }
         ]
       }

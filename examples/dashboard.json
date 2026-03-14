@@ -1,0 +1,9 @@
+{
+  "items": [
+    {"label": "mail", "command": "hookers provider unread-mail"},
+    {"label": "branch", "command": "hookers provider git-branch"},
+    {"label": "gh-token", "command": "hookers provider gh-token-expiry"},
+    {"label": "dirty", "command": "hookers provider dirty-files"},
+    {"label": "time", "command": "hookers provider time"}
+  ]
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dashboard script — reads config, runs commands, outputs compact status line.
+# Dashboard script — reads config, runs providers in parallel, outputs compact status line.
 # Config file: ~/.config/hookers/dashboard.json
 # Output goes to stdout, which UserPromptSubmit injects into agent context.
 
@@ -16,14 +16,27 @@ if [ "$ITEM_COUNT" -eq 0 ]; then
   exit 0
 fi
 
+# Create temp dir for parallel provider results
+RESULTS_DIR=$(mktemp -d)
+trap 'rm -rf "$RESULTS_DIR"' EXIT
+
+# Launch all providers in parallel
+for ((i=0; i<ITEM_COUNT; i++)); do
+  CMD=$(jq -r --argjson i "$i" '.items[$i].command' "$CONFIG")
+  TIMEOUT=$(jq -r --argjson i "$i" '.items[$i].timeout // 5' "$CONFIG")
+  (
+    VALUE=$(timeout "${TIMEOUT}s" bash -c "$CMD" 2>/dev/null | tr -d '\n')
+    echo -n "$VALUE" > "$RESULTS_DIR/$i"
+  ) &
+done
+wait
+
+# Collect results in order
 PARTS=()
 for ((i=0; i<ITEM_COUNT; i++)); do
   LABEL=$(jq -r --argjson i "$i" '.items[$i].label' "$CONFIG")
-  CMD=$(jq -r --argjson i "$i" '.items[$i].command' "$CONFIG")
-  TIMEOUT=$(jq -r --argjson i "$i" '.items[$i].timeout // 5' "$CONFIG")
-
-  # Run command with timeout, capture output, swallow errors
-  VALUE=$(timeout "${TIMEOUT}s" bash -c "$CMD" 2>/dev/null | tr -d '\n' || echo "?")
+  VALUE=""
+  [ -f "$RESULTS_DIR/$i" ] && VALUE=$(cat "$RESULTS_DIR/$i")
 
   if [ -n "$VALUE" ]; then
     PARTS+=("${LABEL}: ${VALUE}")
