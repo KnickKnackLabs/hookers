@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="Apply hooks from manifest to Claude Code settings"
+#MISE description="Apply hooks from the catalog to Claude Code settings"
+#USAGE arg "[hooks...]" help="Hook names to apply (e.g., session-id anti-compact). If none specified, applies all."
 #USAGE flag "--dry-run" help="Show what would change without applying"
 #USAGE flag "--scope <scope>" default="user" help="Settings scope: user, project, or local"
-#USAGE flag "--manifest <path>" help="Path to manifest file (default: bundled claude-code.json)"
 
 set -eu
 
@@ -11,7 +11,7 @@ SCOPE="${usage_scope:-user}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-MANIFEST="${usage_manifest:-$REPO_DIR/manifests/claude-code.json}"
+CATALOG_DIR="$REPO_DIR/catalog"
 
 case "$SCOPE" in
   user)    SETTINGS_FILE="$HOME/.claude/settings.json" ;;
@@ -20,27 +20,50 @@ case "$SCOPE" in
   *)       echo "Error: scope must be user, project, or local" >&2; exit 1 ;;
 esac
 
-if [ ! -f "$MANIFEST" ]; then
-  echo "Error: No hooks manifest at $MANIFEST" >&2
-  exit 1
+# Collect catalog files to apply
+CATALOG_FILES=()
+HOOKS="${usage_hooks:-}"
+if [ -n "$HOOKS" ]; then
+  for NAME in $HOOKS; do
+    FILE="$CATALOG_DIR/${NAME}.json"
+    if [ ! -f "$FILE" ]; then
+      echo "Error: No catalog entry for '$NAME' (expected $FILE)" >&2
+      exit 1
+    fi
+    CATALOG_FILES+=("$FILE")
+  done
+else
+  for f in "$CATALOG_DIR"/*.json; do
+    CATALOG_FILES+=("$f")
+  done
 fi
+
+if [ ${#CATALOG_FILES[@]} -eq 0 ]; then
+  echo "No hooks to apply" >&2
+  exit 0
+fi
+
+# Merge all selected catalog entries into a single hooks object
+DESIRED_HOOKS=$(jq -s '
+  reduce .[] as $entry ({};
+    reduce ($entry.hooks | keys[]) as $event (.;
+      .[$event] = (.[$event] // []) + $entry.hooks[$event]
+    )
+  )
+' "${CATALOG_FILES[@]}")
 
 # Ensure settings file exists
 if [ ! -f "$SETTINGS_FILE" ]; then
   echo "{}" > "$SETTINGS_FILE"
 fi
 
-# Compare current hooks with manifest
 CURRENT_HOOKS=$(jq '.hooks // {}' "$SETTINGS_FILE")
-DESIRED_HOOKS=$(jq '.' "$MANIFEST")
 
 # Collect what needs to change
 ADDED=0
 ALREADY=0
 
-# Iterate over each event in the manifest
 for EVENT in $(echo "$DESIRED_HOOKS" | jq -r 'keys[]'); do
-  # Iterate over each matcher group
   GROUP_COUNT=$(echo "$DESIRED_HOOKS" | jq --arg e "$EVENT" '.[$e] | length')
   for ((g=0; g<GROUP_COUNT; g++)); do
     MATCHER=$(echo "$DESIRED_HOOKS" | jq -r --arg e "$EVENT" --argjson g "$g" '.[$e][$g].matcher')
@@ -50,7 +73,6 @@ for EVENT in $(echo "$DESIRED_HOOKS" | jq -r 'keys[]'); do
       HOOK=$(echo "$DESIRED_HOOKS" | jq --arg e "$EVENT" --argjson g "$g" --argjson h "$h" '.[$e][$g].hooks[$h]')
       CMD=$(echo "$HOOK" | jq -r '.command // empty')
 
-      # Check if this hook already exists
       EXISTS=$(echo "$CURRENT_HOOKS" | jq --arg e "$EVENT" --arg m "$MATCHER" --arg cmd "$CMD" '
         .[$e] // [] | .[] | select(.matcher == $m) | .hooks[] | select(.command == $cmd)
       ' 2>/dev/null)
@@ -80,21 +102,15 @@ fi
 # Clean up temp file on failure
 trap 'rm -f "${SETTINGS_FILE}.tmp"' ERR
 
-# Merge manifest hooks into settings (additive only — won't remove hooks
-# not in the manifest, so manually-added hooks are preserved)
-# For each event, merge matcher groups: if a group with the same matcher exists,
-# append new hooks; otherwise add the whole group
 jq --argjson desired "$DESIRED_HOOKS" '
   .hooks //= {} |
   reduce ($desired | keys[]) as $event (.;
     reduce ($desired[$event] | to_entries[]) as $group (.;
       ($group.value.matcher) as $matcher |
       reduce ($group.value.hooks[] ) as $hook (.;
-        # Check if this hook already exists
         if (.hooks[$event] // [] | [.[] | select(.matcher == $matcher) | .hooks[] | select(.command == $hook.command)] | length) > 0
         then .
         else
-          # Find or create matcher group
           if (.hooks[$event] // [] | [to_entries[] | select(.value.matcher == $matcher)] | length) > 0
           then
             .hooks[$event] = [.hooks[$event][] | if .matcher == $matcher then .hooks += [$hook] else . end]

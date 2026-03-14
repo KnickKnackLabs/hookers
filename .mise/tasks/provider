@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#MISE description="Run a dashboard data provider"
+#USAGE arg "<name>" help="Provider name (e.g., unread-mail, git-branch, gh-token-expiry)"
+
+set -eu
+
+NAME="$usage_name"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROVIDER="$REPO_DIR/scripts/providers/${NAME}.sh"
+
+if [ ! -f "$PROVIDER" ]; then
+  echo "Error: No provider '$NAME' (expected $PROVIDER)" >&2
+  exit 1
+fi
+
+exec bash "$PROVIDER"
