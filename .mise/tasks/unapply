@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#MISE description="Remove hooks installed from the catalog"
+#USAGE arg "<hooks...>" help="Hook names to remove (e.g., session-id dashboard)"
+#USAGE flag "--dry-run" help="Show what would change without removing"
+#USAGE flag "--scope <scope>" default="user" help="Settings scope: user, project, or local"
+
+set -eu
+
+DRY_RUN="${usage_dry_run:-false}"
+SCOPE="${usage_scope:-user}"
+HOOKS="$usage_hooks"
+
+case "$SCOPE" in
+  user)    SETTINGS_FILE="$HOME/.claude/settings.json" ;;
+  project) SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.json" ;;
+  local)   SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.local.json" ;;
+  *)       echo "Error: scope must be user, project, or local" >&2; exit 1 ;;
+esac
+
+if [ ! -f "$SETTINGS_FILE" ]; then
+  echo "No settings file at $SETTINGS_FILE" >&2
+  exit 0
+fi
+
+REMOVED=0
+
+for NAME in $HOOKS; do
+  MARKER="# hookers:${NAME}"
+
+  # Count matching hooks
+  COUNT=$(jq --arg marker "$MARKER" '
+    [.hooks // {} | to_entries[] | .value[] | .hooks[] | select(.command | contains($marker))] | length
+  ' "$SETTINGS_FILE")
+
+  if [ "$COUNT" -eq 0 ]; then
+    echo "No hooks found for '$NAME'" >&2
+    continue
+  fi
+
+  if [ "$DRY_RUN" = "true" ]; then
+    echo "Would remove $COUNT hook(s) for '$NAME'" >&2
+    REMOVED=$((REMOVED + COUNT))
+    continue
+  fi
+
+  # Remove hooks containing the marker, clean up empty groups and events
+  trap 'rm -f "${SETTINGS_FILE}.tmp"' ERR
+  jq --arg marker "$MARKER" '
+    .hooks //= {} |
+    # Remove matching hooks from all events
+    .hooks = (.hooks | to_entries | map(
+      .value = [.value[] |
+        .hooks = [.hooks[] | select(.command | contains($marker) | not)] |
+        select((.hooks | length) > 0)
+      ] |
+      select((.value | length) > 0)
+    ) | from_entries) |
+    # Remove empty hooks object
+    if (.hooks | length) == 0 then del(.hooks) else . end
+  ' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
+    && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+
+  REMOVED=$((REMOVED + COUNT))
+  echo "Removed $COUNT hook(s) for '$NAME'" >&2
+done
+
+if [ "$DRY_RUN" = "true" ] && [ "$REMOVED" -gt 0 ]; then
+  echo "$REMOVED hook(s) to remove" >&2
+fi

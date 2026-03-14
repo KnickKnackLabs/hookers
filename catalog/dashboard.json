@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hookers dashboard"
+            "command": "bash -c '# hookers:dashboard\nhookers dashboard'"
           }
         ]
       }

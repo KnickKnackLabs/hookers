@@ -59,45 +59,83 @@ fi
 
 CURRENT_HOOKS=$(jq '.hooks // {}' "$SETTINGS_FILE")
 
-# Collect what needs to change
-ADDED=0
-ALREADY=0
+# Check each catalog entry: unchanged (skip), updated (replace), or new (add)
+SKIP_FILES=()    # catalog files where the exact command already exists
+UPDATE_FILES=()  # catalog files where the marker exists but command changed
+NEW_FILES=()     # catalog files with no existing marker
 
-for EVENT in $(echo "$DESIRED_HOOKS" | jq -r 'keys[]'); do
-  GROUP_COUNT=$(echo "$DESIRED_HOOKS" | jq --arg e "$EVENT" '.[$e] | length')
-  for ((g=0; g<GROUP_COUNT; g++)); do
-    MATCHER=$(echo "$DESIRED_HOOKS" | jq -r --arg e "$EVENT" --argjson g "$g" '.[$e][$g].matcher')
-    HOOK_COUNT=$(echo "$DESIRED_HOOKS" | jq --arg e "$EVENT" --argjson g "$g" '.[$e][$g].hooks | length')
+for f in "${CATALOG_FILES[@]}"; do
+  NAME=$(jq -r '.name' "$f")
+  MARKER="# hookers:${NAME}"
+  CMD=$(jq -r '.hooks | to_entries[0].value[0].hooks[0].command' "$f")
 
-    for ((h=0; h<HOOK_COUNT; h++)); do
-      HOOK=$(echo "$DESIRED_HOOKS" | jq --arg e "$EVENT" --argjson g "$g" --argjson h "$h" '.[$e][$g].hooks[$h]')
-      CMD=$(echo "$HOOK" | jq -r '.command // empty')
+  # Check if exact command already exists in settings
+  EXACT=$(echo "$CURRENT_HOOKS" | jq --arg cmd "$CMD" '
+    [to_entries[] | .value[] | .hooks[] | select(.command == $cmd)] | length
+  ' 2>/dev/null)
 
-      EXISTS=$(echo "$CURRENT_HOOKS" | jq --arg e "$EVENT" --arg m "$MATCHER" --arg cmd "$CMD" '
-        .[$e] // [] | .[] | select(.matcher == $m) | .hooks[] | select(.command == $cmd)
-      ' 2>/dev/null)
-
-      if [ -n "$EXISTS" ]; then
-        ALREADY=$((ALREADY + 1))
-      else
-        ADDED=$((ADDED + 1))
-        if [ "$DRY_RUN" = "true" ]; then
-          echo "Would add $EVENT hook: $CMD" >&2
-        fi
-      fi
-    done
-  done
+  if [ "$EXACT" -gt 0 ]; then
+    SKIP_FILES+=("$f")
+  else
+    # Check if marker exists (means command changed)
+    HAS_MARKER=$(echo "$CURRENT_HOOKS" | jq --arg marker "$MARKER" '
+      [to_entries[] | .value[] | .hooks[] | select(.command | contains($marker))] | length
+    ' 2>/dev/null)
+    if [ "$HAS_MARKER" -gt 0 ]; then
+      UPDATE_FILES+=("$f")
+    else
+      NEW_FILES+=("$f")
+    fi
+  fi
 done
 
-if [ "$ADDED" -eq 0 ]; then
-  echo "All hooks already applied ($ALREADY present)" >&2
+ALREADY=${#SKIP_FILES[@]}
+UPDATED=${#UPDATE_FILES[@]}
+NEW=${#NEW_FILES[@]}
+
+if [ "$((UPDATED + NEW))" -eq 0 ]; then
+  echo "All hooks up to date ($ALREADY present)" >&2
   exit 0
 fi
 
 if [ "$DRY_RUN" = "true" ]; then
-  echo "$ADDED hook(s) to add, $ALREADY already present" >&2
+  for f in "${UPDATE_FILES[@]}"; do
+    NAME=$(jq -r '.name' "$f")
+    echo "Would update: $NAME" >&2
+  done
+  for f in "${NEW_FILES[@]}"; do
+    NAME=$(jq -r '.name' "$f")
+    echo "Would add: $NAME" >&2
+  done
+  echo "$((UPDATED + NEW)) hook(s) to apply ($NEW new, $UPDATED updated), $ALREADY already present" >&2
   exit 0
 fi
+
+# Remove outdated hooks (ones with matching marker but different command)
+for f in "${UPDATE_FILES[@]}"; do
+  NAME=$(jq -r '.name' "$f")
+  MARKER="# hookers:${NAME}"
+  jq --arg marker "$MARKER" '
+    .hooks //= {} |
+    .hooks = (.hooks | to_entries | map(
+      .value = [.value[] |
+        .hooks = [.hooks[] | select(.command | contains($marker) | not)] |
+        select((.hooks | length) > 0)
+      ] | select((.value | length) > 0)
+    ) | from_entries) |
+    if (.hooks | length) == 0 then del(.hooks) else . end
+  ' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+done
+
+# Build merged hooks object from new + updated catalog entries
+APPLY_FILES=("${UPDATE_FILES[@]}" "${NEW_FILES[@]}")
+DESIRED_HOOKS=$(jq -s '
+  reduce .[] as $entry ({};
+    reduce ($entry.hooks | keys[]) as $event (.;
+      .[$event] = (.[$event] // []) + $entry.hooks[$event]
+    )
+  )
+' "${APPLY_FILES[@]}")
 
 # Clean up temp file on failure
 trap 'rm -f "${SETTINGS_FILE}.tmp"' ERR
@@ -124,4 +162,4 @@ jq --argjson desired "$DESIRED_HOOKS" '
 ' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
   && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
 
-echo "Applied $ADDED hook(s), $ALREADY already present" >&2
+echo "Applied $((UPDATED + NEW)) hook(s) ($NEW new, $UPDATED updated), $ALREADY already present" >&2
