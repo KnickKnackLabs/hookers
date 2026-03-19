@@ -4,9 +4,7 @@
 
 set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CATALOG_DIR="$REPO_DIR/catalog"
+CATALOG_DIR="${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/catalog"
 
 if [ ! -d "$CATALOG_DIR" ]; then
   echo "No catalog directory found" >&2

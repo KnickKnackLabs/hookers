@@ -5,9 +5,7 @@
 set -eu
 
 NAME="$usage_name"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PROVIDER="$REPO_DIR/scripts/providers/${NAME}.sh"
+PROVIDER="${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/scripts/providers/${NAME}.sh"
 
 if [ ! -f "$PROVIDER" ]; then
   echo "Error: No provider '$NAME' (expected $PROVIDER)" >&2

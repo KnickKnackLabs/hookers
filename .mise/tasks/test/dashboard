@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
 #MISE description="Run dashboard tests (BATS)"
 set -e
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-bats "$REPO_DIR/test/dashboard.bats"
+bats "${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/test/dashboard.bats"

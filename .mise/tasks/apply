@@ -3,15 +3,24 @@
 #USAGE arg "[hooks...]" help="Hook names to apply (e.g., session-id anti-compact). If none specified, applies all."
 #USAGE flag "--dry-run" help="Show what would change without applying"
 #USAGE flag "--scope <scope>" default="user" help="Settings scope: user, project, or local"
+#USAGE flag "--catalog <path>" var=#true help="Additional catalog directories to search"
 
 set -eu
 
 DRY_RUN="${usage_dry_run:-false}"
 SCOPE="${usage_scope:-user}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CATALOG_DIR="$REPO_DIR/catalog"
+# Build list of catalog directories: built-in first, then any --catalog additions
+CATALOG_DIRS=("${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/catalog")
+if [ -n "${usage_catalog:-}" ]; then
+  for dir in $usage_catalog; do
+    if [ ! -d "$dir" ]; then
+      echo "Error: Catalog directory '$dir' does not exist" >&2
+      exit 1
+    fi
+    CATALOG_DIRS+=("$dir")
+  done
+fi
 
 case "$SCOPE" in
   user)    SETTINGS_FILE="$HOME/.claude/settings.json" ;;
@@ -25,16 +34,26 @@ CATALOG_FILES=()
 HOOKS="${usage_hooks:-}"
 if [ -n "$HOOKS" ]; then
   for NAME in $HOOKS; do
-    FILE="$CATALOG_DIR/${NAME}.json"
-    if [ ! -f "$FILE" ]; then
-      echo "Error: No catalog entry for '$NAME' (expected $FILE)" >&2
+    FOUND=""
+    for dir in "${CATALOG_DIRS[@]}"; do
+      FILE="$dir/${NAME}.json"
+      if [ -f "$FILE" ]; then
+        FOUND="$FILE"
+        break
+      fi
+    done
+    if [ -z "$FOUND" ]; then
+      SEARCHED=$(printf ", %s" "${CATALOG_DIRS[@]}")
+      echo "Error: No catalog entry for '$NAME' (searched:${SEARCHED:1})" >&2
       exit 1
     fi
-    CATALOG_FILES+=("$FILE")
+    CATALOG_FILES+=("$FOUND")
   done
 else
-  for f in "$CATALOG_DIR"/*.json; do
-    CATALOG_FILES+=("$f")
+  for dir in "${CATALOG_DIRS[@]}"; do
+    for f in "$dir"/*.json; do
+      [ -f "$f" ] && CATALOG_FILES+=("$f")
+    done
   done
 fi
 
