@@ -4,11 +4,8 @@
 
 set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-
 if [ -n "${usage_config:-}" ]; then
   export HOOKERS_DASHBOARD_CONFIG="$usage_config"
 fi
 
-exec bash "$REPO_DIR/scripts/dashboard.sh"
+exec bash "${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/scripts/dashboard.sh"
