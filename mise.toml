@@ -1,3 +1,6 @@
+[settings]
+task_output = "interleave"
+
 [tools]
 jq = "latest"
 bats = "1.13.0"

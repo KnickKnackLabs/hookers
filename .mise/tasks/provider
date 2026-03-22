@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Run a dashboard data provider"
 #USAGE arg "<name>" help="Provider name (e.g., unread-mail, git-branch, gh-token-expiry)"
+#USAGE arg "[args...]" var=#true help="Optional arguments forwarded to the provider script"
 
 set -eu
 
@@ -12,4 +13,5 @@ if [ ! -f "$PROVIDER" ]; then
   exit 1
 fi
 
-exec bash "$PROVIDER"
+eval "ARGS=(${usage_args:-})"
+exec bash "$PROVIDER" "${ARGS[@]+"${ARGS[@]}"}"

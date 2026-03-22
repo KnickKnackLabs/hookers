@@ -1,19 +1,6 @@
 #!/usr/bin/env bats
 
-setup() {
-  REPO_DIR="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  TEST_HOME="$(mktemp -d)"
-  TEST_CONFIG="$TEST_HOME/.config/hookers/dashboard.json"
-  mkdir -p "$(dirname "$TEST_CONFIG")"
-}
-
-teardown() {
-  rm -rf "$TEST_HOME"
-}
-
-run_dashboard() {
-  HOOKERS_DASHBOARD_CONFIG="$TEST_CONFIG" mise -C "$REPO_DIR" run -q dashboard -- "$@"
-}
+load dashboard-helpers
 
 @test "dashboard outputs nothing with no config" {
   rm -f "$TEST_CONFIG"
@@ -86,15 +73,4 @@ EOF
   run run_dashboard
   [ "$status" -eq 0 ]
   [[ "$output" == *"fast: quick"* ]]
-}
-
-@test "provider runs bundled scripts" {
-  run mise -C "$REPO_DIR" run -q provider -- git-branch
-  [ "$status" -eq 0 ]
-}
-
-@test "provider rejects unknown name" {
-  run mise -C "$REPO_DIR" run -q provider -- nonexistent
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"No provider"* ]]
 }
