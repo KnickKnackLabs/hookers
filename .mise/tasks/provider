@@ -13,5 +13,5 @@ if [ ! -f "$PROVIDER" ]; then
   exit 1
 fi
 
-eval "ARGS=(${usage_args:-})"
+read -ra ARGS <<< "${usage_args:-}"
 exec bash "$PROVIDER" "${ARGS[@]+"${ARGS[@]}"}"

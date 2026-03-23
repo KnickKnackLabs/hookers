@@ -13,7 +13,7 @@ EOF
 
 @test "shows duration above threshold" {
   cat > "$TEST_CONFIG" << 'EOF'
-{"items": [{"label": "slow", "command": "sleep 2 && echo done"}]}
+{"items": [{"label": "slow", "command": "sleep 1 && echo done"}]}
 EOF
   run run_dashboard
   [ "$status" -eq 0 ]

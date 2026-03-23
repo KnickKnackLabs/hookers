@@ -19,7 +19,7 @@ fi
 NO_PREFIX="${HOOKERS_DASHBOARD_NO_PREFIX:-}"
 NO_LABELS="${HOOKERS_DASHBOARD_NO_LABELS:-}"
 NO_DURATION="${HOOKERS_DASHBOARD_NO_DURATION:-}"
-DURATION_THRESHOLD="${HOOKERS_DASHBOARD_DURATION_THRESHOLD:-500}"
+DURATION_THRESHOLD="${HOOKERS_DASHBOARD_DURATION_THRESHOLD:-1}"
 
 # Color: explicit setting > TTY detection
 if [ "${HOOKERS_DASHBOARD_COLOR:-}" = "1" ]; then
@@ -56,12 +56,14 @@ for ((i=0; i<ITEM_COUNT; i++)); do
   CMD=$(jq -r --argjson i "$i" '.items[$i].command' "$CONFIG")
   TIMEOUT=$(jq -r --argjson i "$i" '.items[$i].timeout // 5' "$CONFIG")
   (
-    START_MS=$(($(date +%s) * 1000))
+    START_S=$(date +%s)
     VALUE=$(timeout "${TIMEOUT}s" bash -c "$CMD" 2>/dev/null | tr -d '\n')
-    END_MS=$(($(date +%s) * 1000))
-    ELAPSED_MS=$((END_MS - START_MS))
-    echo -n "$VALUE" > "$RESULTS_DIR/$i.value"
-    echo -n "$ELAPSED_MS" > "$RESULTS_DIR/$i.ms"
+    END_S=$(date +%s)
+    ELAPSED_S=$((END_S - START_S))
+    echo -n "$VALUE" > "$RESULTS_DIR/$i.value.tmp"
+    echo -n "$ELAPSED_S" > "$RESULTS_DIR/$i.ms.tmp"
+    mv "$RESULTS_DIR/$i.value.tmp" "$RESULTS_DIR/$i.value"
+    mv "$RESULTS_DIR/$i.ms.tmp" "$RESULTS_DIR/$i.ms"
   ) &
 done
 wait
@@ -78,13 +80,9 @@ for ((i=0; i<ITEM_COUNT; i++)); do
   if [ -n "$VALUE" ]; then
     DUR=""
     if [ "$NO_DURATION" != "1" ] && [ -f "$RESULTS_DIR/$i.ms" ]; then
-      MS=$(cat "$RESULTS_DIR/$i.ms")
-      if [ "$MS" -ge "$DURATION_THRESHOLD" ]; then
-        if [ "$MS" -ge 1000 ]; then
-          DUR="($(( MS / 1000 ))s)"
-        else
-          DUR="(${MS}ms)"
-        fi
+      SECS=$(cat "$RESULTS_DIR/$i.ms")
+      if [ "$SECS" -ge "$DURATION_THRESHOLD" ]; then
+        DUR="(${SECS}s)"
       fi
     fi
 
@@ -112,8 +110,8 @@ render_plain() {
   echo -n "$part"
 }
 
-# Render a single item with color
-render_color() {
+# Render a single item with optional color (DIM/RESET are empty when color is off)
+render_item() {
   local idx=$1
   if [ "$NO_LABELS" != "1" ]; then
     printf "${DIM}%s:${RESET} %s" "${LABELS[$idx]}" "${VALUES[$idx]}"
@@ -127,10 +125,10 @@ render_color() {
 
 # Build output with optional line wrapping
 SEP=" | "
-SEP_LEN=3
+SEP_LEN=${#SEP}
 PREFIX=""
 PREFIX_LEN=0
-if [ "$NO_PREFIX" != "1" ] && [ "$NO_LABELS" != "1" ]; then
+if [ "$NO_PREFIX" != "1" ]; then
   PREFIX="[dashboard] "
   PREFIX_LEN=12
 fi
@@ -156,7 +154,7 @@ for ((i=0; i<${#VALUES[@]}; i++)); do
   ITEM_LEN=${#ITEM_PLAIN}
 
   if [ "$FIRST_ON_LINE" = "1" ]; then
-    render_color "$i"
+    render_item "$i"
     LINE_LEN=$((LINE_LEN + ITEM_LEN))
     FIRST_ON_LINE=0
   elif [ $((LINE_LEN + SEP_LEN + ITEM_LEN)) -le "$MAX_WIDTH" ]; then
@@ -165,7 +163,7 @@ for ((i=0; i<${#VALUES[@]}; i++)); do
     else
       printf " | "
     fi
-    render_color "$i"
+    render_item "$i"
     LINE_LEN=$((LINE_LEN + SEP_LEN + ITEM_LEN))
   else
     printf "\n"
@@ -174,7 +172,7 @@ for ((i=0; i<${#VALUES[@]}; i++)); do
     else
       printf "%s" "$PREFIX"
     fi
-    render_color "$i"
+    render_item "$i"
     LINE_LEN=$((PREFIX_LEN + ITEM_LEN))
   fi
 done
