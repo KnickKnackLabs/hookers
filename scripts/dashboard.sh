@@ -5,7 +5,7 @@
 
 set -eu
 
-# HOOKERS_DASHBOARD_CWD is expected to be set by the caller when workspace context
+# HOOKERS_CWD is expected to be set by the caller when workspace context
 # matters (e.g. Claude Code hooks extract .cwd from stdin JSON before invoking hookers,
 # since the shiv chain consumes stdin). Providers use this to operate on the workspace
 # directory rather than their own repo dir.
