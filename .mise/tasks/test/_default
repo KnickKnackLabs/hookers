@@ -1,3 +1,13 @@
 #!/usr/bin/env bash
 #MISE description="Run all tests"
-#MISE depends=["test:catalog", "test:apply", "test:dashboard"]
+set -e
+
+mise run test:catalog
+mise run test:apply
+mise run test:dashboard
+mise run test:dashboard-labels
+mise run test:dashboard-duration
+mise run test:dashboard-color
+mise run test:dashboard-width
+mise run test:provider
+mise run test:time

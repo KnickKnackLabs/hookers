@@ -1,11 +1,39 @@
 #!/usr/bin/env bash
 #MISE description="Run the status dashboard (outputs a compact status line)"
 #USAGE flag "--config <path>" help="Path to dashboard config (default: ~/.config/hookers/dashboard.json)"
+#USAGE flag "--no-prefix" help="Hide the [dashboard] prefix"
+#USAGE flag "--no-labels" help="Hide item labels in output"
+#USAGE flag "--no-duration" help="Hide provider durations"
+#USAGE flag "--color" help="Force color output"
+#USAGE flag "--no-color" help="Disable color output"
+#USAGE flag "--width <width>" help="Max width before wrapping to next line (default: terminal width)"
 
 set -eu
 
 if [ -n "${usage_config:-}" ]; then
   export HOOKERS_DASHBOARD_CONFIG="$usage_config"
+fi
+
+if [ "${usage_no_prefix:-false}" = "true" ]; then
+  export HOOKERS_DASHBOARD_NO_PREFIX=1
+fi
+
+if [ "${usage_no_labels:-false}" = "true" ]; then
+  export HOOKERS_DASHBOARD_NO_LABELS=1
+fi
+
+if [ "${usage_no_duration:-false}" = "true" ]; then
+  export HOOKERS_DASHBOARD_NO_DURATION=1
+fi
+
+if [ "${usage_color:-false}" = "true" ]; then
+  export HOOKERS_DASHBOARD_COLOR=1
+elif [ "${usage_no_color:-false}" = "true" ]; then
+  export HOOKERS_DASHBOARD_COLOR=0
+fi
+
+if [ -n "${usage_width:-}" ]; then
+  export HOOKERS_DASHBOARD_WIDTH="$usage_width"
 fi
 
 exec bash "${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/scripts/dashboard.sh"

@@ -1,3 +1,7 @@
+[settings]
+# Suppress noisy per-task headers in dashboard output (single-line status needs clean stdout)
+task_output = "interleave"
+
 [tools]
 jq = "latest"
 bats = "1.13.0"

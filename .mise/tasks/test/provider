@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Run provider tests (BATS)"
+set -e
+bats "${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/test/provider.bats"
