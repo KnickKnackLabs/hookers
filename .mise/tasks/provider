@@ -13,5 +13,10 @@ if [ ! -f "$PROVIDER" ]; then
   exit 1
 fi
 
-read -ra ARGS <<< "${usage_args:-}"
+ARGS=()
+if [ -n "${usage_args:-}" ]; then
+  while IFS= read -r arg; do
+    ARGS+=("$arg")
+  done < <(printf '%s' "${usage_args}" | xargs printf '%s\n')
+fi
 exec bash "$PROVIDER" "${ARGS[@]+"${ARGS[@]}"}"
