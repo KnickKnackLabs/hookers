@@ -61,9 +61,9 @@ for ((i=0; i<ITEM_COUNT; i++)); do
     END_S=$(date +%s)
     ELAPSED_S=$((END_S - START_S))
     echo -n "$VALUE" > "$RESULTS_DIR/$i.value.tmp"
-    echo -n "$ELAPSED_S" > "$RESULTS_DIR/$i.ms.tmp"
+    echo -n "$ELAPSED_S" > "$RESULTS_DIR/$i.dur.tmp"
     mv "$RESULTS_DIR/$i.value.tmp" "$RESULTS_DIR/$i.value"
-    mv "$RESULTS_DIR/$i.ms.tmp" "$RESULTS_DIR/$i.ms"
+    mv "$RESULTS_DIR/$i.dur.tmp" "$RESULTS_DIR/$i.dur"
   ) &
 done
 wait
@@ -79,8 +79,8 @@ for ((i=0; i<ITEM_COUNT; i++)); do
 
   if [ -n "$VALUE" ]; then
     DUR=""
-    if [ "$NO_DURATION" != "1" ] && [ -f "$RESULTS_DIR/$i.ms" ]; then
-      SECS=$(cat "$RESULTS_DIR/$i.ms")
+    if [ "$NO_DURATION" != "1" ] && [ -f "$RESULTS_DIR/$i.dur" ]; then
+      SECS=$(cat "$RESULTS_DIR/$i.dur")
       if [ "$SECS" -ge "$DURATION_THRESHOLD" ]; then
         DUR="(${SECS}s)"
       fi
@@ -127,11 +127,10 @@ render_item() {
 SEP=" | "
 SEP_LEN=${#SEP}
 PREFIX=""
-PREFIX_LEN=0
 if [ "$NO_PREFIX" != "1" ]; then
   PREFIX="[dashboard] "
-  PREFIX_LEN=12
 fi
+PREFIX_LEN=${#PREFIX}
 
 # Default to 1000 columns when no width is set — wide enough to never wrap
 # in practice (terminals rarely exceed ~500 cols), but still a finite number
