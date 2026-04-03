@@ -21,18 +21,19 @@ fi
 
 if [ "$JSON" = "true" ]; then
   # Output full catalog entries for applied hooks, resolved from stored paths
-  FILES=()
+  ENTRIES=()
   for i in $(seq 0 $((HOOK_COUNT - 1))); do
     name=$(jq -r ".applied[$i].name" "$STATE_FILE")
     catalog=$(jq -r ".applied[$i].catalog" "$STATE_FILE")
     file="$catalog/${name}.json"
-    [ -f "$file" ] && FILES+=("$file")
+    if [ -f "$file" ]; then
+      ENTRIES+=("$(jq -c '.' "$file")")
+    else
+      ENTRIES+=("$(jq -n --arg name "$name" --arg catalog "$catalog" '{name: $name, error: "catalog file not found", catalog: $catalog}')")
+      echo "Warning: Hook '$name' catalog not found at $catalog" >&2
+    fi
   done
-  if [ ${#FILES[@]} -gt 0 ]; then
-    jq -s '.' "${FILES[@]}"
-  else
-    echo '[]'
-  fi
+  printf '%s\n' "${ENTRIES[@]}" | jq -s '.'
   exit 0
 fi
 

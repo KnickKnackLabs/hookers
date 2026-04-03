@@ -92,10 +92,10 @@ NEW=${#NEW_FILES[@]}
 EXISTING=${#EXISTING_NAMES[@]}
 
 if [ "$DRY_RUN" = "true" ]; then
-  for f in "${NEW_FILES[@]}"; do
+  for f in ${NEW_FILES[@]+"${NEW_FILES[@]}"}; do
     echo "Would add: $(jq -r '.name' "$f")" >&2
   done
-  for name in "${EXISTING_NAMES[@]}"; do
+  for name in ${EXISTING_NAMES[@]+"${EXISTING_NAMES[@]}"}; do
     echo "Already applied: $name" >&2
   done
   echo "$NEW to add, $EXISTING already applied" >&2
@@ -105,7 +105,7 @@ fi
 # Build speculative state file with new hooks added
 SPEC_STATE="${STATE_FILE}.pending"
 cp "$STATE_FILE" "$SPEC_STATE"
-for f in "${NEW_FILES[@]}"; do
+for f in ${NEW_FILES[@]+"${NEW_FILES[@]}"}; do
   NAME=$(jq -r '.name' "$f")
   CATALOG_DIR=$(cd "$(dirname "$f")" && pwd)
   jq --arg name "$NAME" --arg catalog "$CATALOG_DIR" \
