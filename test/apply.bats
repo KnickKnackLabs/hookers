@@ -127,6 +127,22 @@ EOF
   rm -rf "$EXTRA_DIR"
 }
 
+@test "apply does not update state when generator fails" {
+  EXTRA_DIR="$(mktemp -d)"
+  # inject on session-start is invalid — generator will fail
+  cat > "$EXTRA_DIR/bad-inject.json" <<'EOF'
+{"name":"bad-inject","description":"Test","on":"session-start","action":"inject","command":"echo oops"}
+EOF
+
+  run hookers_apply --catalog "$EXTRA_DIR" bad-inject
+  [ "$status" -ne 0 ]
+
+  # State should not contain the failed hook
+  run hookers_list
+  [[ "$output" == *"No hooks applied"* ]]
+  rm -rf "$EXTRA_DIR"
+}
+
 # --- apply: event → pi mapping ---
 
 @test "before-prompt maps to before_agent_start" {

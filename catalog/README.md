@@ -24,7 +24,7 @@ Each JSON file defines a hook that can be applied to the agent harness (currentl
 | `on` | yes | When the hook fires (see events below) |
 | `action` | yes | What the hook does (see actions below) |
 | `command` | no | Shell command to run (required for `run` and `inject` actions) |
-| `matcher` | no | Filter pattern (e.g., tool name regex for `before-tool`) |
+| `matcher` | no | Filter pattern (e.g., tool name regex). Currently only used with `block` + `before-tool`. |
 
 ### Events
 

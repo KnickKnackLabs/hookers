@@ -108,7 +108,8 @@ EOF
   });
 EOF
       else
-        echo "  // WARNING: inject action only supported on before-prompt event" >&2
+        echo "Error: inject action only supported on before-prompt event (got '$on' for hook '$name')" >&2
+        exit 1
       fi
       ;;
 

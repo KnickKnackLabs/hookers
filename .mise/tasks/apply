@@ -102,18 +102,23 @@ if [ "$DRY_RUN" = "true" ]; then
   exit 0
 fi
 
-# Update state file — add new hooks
+# Build speculative state file with new hooks added
+SPEC_STATE="${STATE_FILE}.pending"
+cp "$STATE_FILE" "$SPEC_STATE"
 for name in "${NEW_NAMES[@]}"; do
   jq --arg name "$name" '.applied += [$name] | .applied |= unique' \
-    "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+    "$SPEC_STATE" > "${SPEC_STATE}.tmp" && mv "${SPEC_STATE}.tmp" "$SPEC_STATE"
 done
 
-# Always regenerate the extension — catalog entries may have changed
+# Generate extension first — if this fails, state is unchanged
 mkdir -p "$EXT_DIR"
-trap 'rm -f "$EXT_DIR/hookers.ts.tmp"' ERR
-bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$STATE_FILE" "${CATALOG_DIRS[@]}" \
-  > "$EXT_DIR/hookers.ts.tmp" \
-  && mv "$EXT_DIR/hookers.ts.tmp" "$EXT_DIR/hookers.ts"
+trap 'rm -f "$EXT_DIR/hookers.ts.tmp" "$SPEC_STATE" "${SPEC_STATE}.tmp"' ERR
+bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$SPEC_STATE" "${CATALOG_DIRS[@]}" \
+  > "$EXT_DIR/hookers.ts.tmp"
+
+# Extension generated successfully — commit state and extension
+mv "$SPEC_STATE" "$STATE_FILE"
+mv "$EXT_DIR/hookers.ts.tmp" "$EXT_DIR/hookers.ts"
 
 if [ "$NEW" -gt 0 ]; then
   echo "Applied $NEW hook(s) ($EXISTING already present)" >&2

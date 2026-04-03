@@ -8,6 +8,6 @@ if [ -z "${MISE_CONFIG_ROOT:-}" ]; then
 fi
 
 hookers() {
-  cd "$MISE_CONFIG_ROOT" && mise run -q "$@"
+  (cd "$MISE_CONFIG_ROOT" && mise run -q "$@")
 }
 export -f hookers

@@ -165,6 +165,15 @@ generate() {
   [[ "$output" == *'echo two'* ]]
 }
 
+@test "inject action on non-before-prompt event fails" {
+  make_hook "test" "session-start" "inject" "echo bad"
+  echo '{"applied":["test"]}' > "$STATE_FILE"
+
+  run generate
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"inject action only supported on before-prompt"* ]]
+}
+
 @test "fails on unknown event name" {
   make_hook "test" "invalid-event" "run" "echo bad"
   echo '{"applied":["test"]}' > "$STATE_FILE"
