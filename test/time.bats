@@ -1,17 +1,16 @@
 #!/usr/bin/env bats
 
 setup() {
-  REPO_DIR="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+  source "$BATS_TEST_DIRNAME/test_helper.bash"
 }
 
 run_time() {
-  mise -C "$REPO_DIR" run -q provider -- time "$@"
+  hookers provider time "$@"
 }
 
 @test "time defaults to datetime" {
   run run_time
   [ "$status" -eq 0 ]
-  # "2026-03-21 14:23 UTC"
   [[ "$output" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}\ [A-Z]+$ ]]
 }
 

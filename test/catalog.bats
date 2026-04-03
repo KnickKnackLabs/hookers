@@ -1,41 +1,67 @@
 #!/usr/bin/env bats
 
 setup() {
-  REPO_DIR="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+  source "$BATS_TEST_DIRNAME/test_helper.bash"
 }
 
 @test "catalog lists all hooks" {
-  run mise -C "$REPO_DIR" run -q catalog
+  run hookers catalog
   [ "$status" -eq 0 ]
-  [[ "$output" == *"session-id"* ]]
   [[ "$output" == *"anti-compact"* ]]
   [[ "$output" == *"dashboard"* ]]
 }
 
 @test "catalog --json outputs valid JSON" {
-  run mise -C "$REPO_DIR" run -q catalog -- --json
+  run hookers catalog --json
   [ "$status" -eq 0 ]
   echo "$output" | jq . >/dev/null 2>&1
-  [ $? -eq 0 ]
 }
 
-@test "each catalog entry has name and description" {
-  run mise -C "$REPO_DIR" run -q catalog -- --json
+@test "each catalog entry has required fields" {
+  run hookers catalog --json
   [ "$status" -eq 0 ]
-  COUNT=$(echo "$output" | jq '[.[] | select(.name and .description)] | length')
-  TOTAL=$(echo "$output" | jq 'length')
-  [ "$COUNT" -eq "$TOTAL" ]
+  INVALID=$(echo "$output" | jq '[.[] | select(.name and .description and .on and .action | not)] | length')
+  [ "$INVALID" -eq 0 ]
 }
 
-@test "each catalog entry has a hookers marker in its command" {
-  run mise -C "$REPO_DIR" run -q catalog -- --json
+@test "catalog entries use valid event names" {
+  run hookers catalog --json
   [ "$status" -eq 0 ]
-  # Every hook command should contain "# hookers:<name>"
-  UNMARKED=$(echo "$output" | jq '
-    [.[] | . as $entry |
-      .hooks | to_entries[] | .value[] | .hooks[] |
-      select(.command | contains("# hookers:" + $entry.name) | not)
-    ] | length
+  VALID_EVENTS="session-start session-end before-prompt before-compact before-tool after-tool agent-stop"
+  INVALID=$(echo "$output" | jq --arg valid "$VALID_EVENTS" '
+    ($valid | split(" ")) as $allowed |
+    [.[] | select(.on | IN($allowed[]) | not)] | length
   ')
-  [ "$UNMARKED" -eq 0 ]
+  [ "$INVALID" -eq 0 ]
+}
+
+@test "catalog entries use valid action types" {
+  run hookers catalog --json
+  [ "$status" -eq 0 ]
+  INVALID=$(echo "$output" | jq '
+    ["run", "inject", "block"] as $allowed |
+    [.[] | select(.action | IN($allowed[]) | not)] | length
+  ')
+  [ "$INVALID" -eq 0 ]
+}
+
+@test "run and inject actions have a command" {
+  run hookers catalog --json
+  [ "$status" -eq 0 ]
+  MISSING=$(echo "$output" | jq '
+    [.[] | select((.action == "run" or .action == "inject") and (.command | length == 0))] | length
+  ')
+  [ "$MISSING" -eq 0 ]
+}
+
+@test "catalog accepts --catalog for additional directories" {
+  EXTRA_DIR="$(mktemp -d)"
+  cat > "$EXTRA_DIR/test-hook.json" <<'EOF'
+{"name":"test-hook","description":"A test hook","on":"session-start","action":"run","command":"echo test"}
+EOF
+
+  run hookers catalog --json --catalog "$EXTRA_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"test-hook"* ]]
+  rm -rf "$EXTRA_DIR"
 }

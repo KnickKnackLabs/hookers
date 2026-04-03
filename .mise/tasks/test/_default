@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #MISE description="Run all tests"
-set -e
+set -euo pipefail
 
 mise run test:catalog
+mise run test:generate
 mise run test:apply
 mise run test:dashboard
 mise run test:dashboard-labels

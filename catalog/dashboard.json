@@ -1,17 +1,7 @@
 {
   "name": "dashboard",
   "description": "Inject a configurable status dashboard into the agent's context on each user prompt",
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c '# hookers:dashboard\nhookers dashboard'"
-          }
-        ]
-      }
-    ]
-  }
+  "on": "before-prompt",
+  "action": "inject",
+  "command": "hookers dashboard"
 }

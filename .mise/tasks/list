@@ -1,57 +1,48 @@
 #!/usr/bin/env bash
-#MISE description="List configured Claude Code hooks"
-#USAGE flag "--scope <scope>" default="user" help="Settings scope: user, project, or local"
-#USAGE flag "--event <event>" help="Filter by event name (e.g., SessionStart)"
+#MISE description="List applied hooks"
 #USAGE flag "--json" help="Output raw JSON"
 
-set -eu
+set -euo pipefail
 
-SCOPE="${usage_scope:-user}"
-EVENT="${usage_event:-}"
 JSON="${usage_json:-false}"
+STATE_DIR="${HOOKERS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/hookers}"
+STATE_FILE="$STATE_DIR/applied.json"
+CATALOG_DIR="${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/catalog"
 
-case "$SCOPE" in
-  user)    SETTINGS_FILE="$HOME/.claude/settings.json" ;;
-  project) SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.json" ;;
-  local)   SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.local.json" ;;
-  *)       echo "Error: scope must be user, project, or local" >&2; exit 1 ;;
-esac
-
-if [ ! -f "$SETTINGS_FILE" ]; then
-  echo "No settings file at $SETTINGS_FILE" >&2
+if [ ! -f "$STATE_FILE" ]; then
+  echo "No hooks applied"
   exit 0
 fi
 
-HAS_HOOKS=$(jq -e '.hooks // empty | keys | length > 0' "$SETTINGS_FILE" 2>/dev/null) || true
-if [ "$HAS_HOOKS" != "true" ]; then
-  echo "No hooks configured in $SETTINGS_FILE"
+APPLIED=$(jq -r '.applied[]' "$STATE_FILE" 2>/dev/null)
+if [ -z "$APPLIED" ]; then
+  echo "No hooks applied"
   exit 0
 fi
 
 if [ "$JSON" = "true" ]; then
-  if [ -n "$EVENT" ]; then
-    jq --arg event "$EVENT" '.hooks[$event] // empty' "$SETTINGS_FILE"
+  # Output full catalog entries for applied hooks
+  FILES=()
+  for name in $APPLIED; do
+    file="$CATALOG_DIR/${name}.json"
+    [ -f "$file" ] && FILES+=("$file")
+  done
+  if [ ${#FILES[@]} -gt 0 ]; then
+    jq -s '.' "${FILES[@]}"
   else
-    jq '.hooks' "$SETTINGS_FILE"
+    echo '[]'
   fi
   exit 0
 fi
 
-# Human-readable output
-if [ -n "$EVENT" ]; then
-  EVENTS="$EVENT"
-else
-  EVENTS=$(jq -r '.hooks | keys[]' "$SETTINGS_FILE")
-fi
-
-for event in $EVENTS; do
-  echo "$event:"
-  jq -r --arg e "$event" '
-    .hooks[$e][]? |
-    .matcher as $m |
-    .hooks[]? |
-    "  \(.type): \(.command // .url // .prompt // "?")" +
-    (if $m != "" then " [matcher: \($m)]" else "" end)
-  ' "$SETTINGS_FILE"
-  echo ""
+for name in $APPLIED; do
+  file="$CATALOG_DIR/${name}.json"
+  if [ -f "$file" ]; then
+    DESC=$(jq -r '.description' "$file")
+    ON=$(jq -r '.on' "$file")
+    ACTION=$(jq -r '.action' "$file")
+    printf "  %-20s %-16s %-8s %s\n" "$name" "$ON" "$ACTION" "$DESC"
+  else
+    printf "  %-20s %s\n" "$name" "(not found in catalog)"
+  fi
 done

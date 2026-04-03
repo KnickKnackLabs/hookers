@@ -8,7 +8,7 @@
 #USAGE flag "--no-color" help="Disable color output"
 #USAGE flag "--width <width>" help="Max width before wrapping to next line (default: terminal width)"
 
-set -eu
+set -euo pipefail
 
 if [ -n "${usage_config:-}" ]; then
   export HOOKERS_DASHBOARD_CONFIG="$usage_config"

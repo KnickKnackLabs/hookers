@@ -1,71 +1,73 @@
 #!/usr/bin/env bash
-#MISE description="Remove hooks installed from the catalog"
-#USAGE arg "<hooks...>" help="Hook names to remove (e.g., session-id dashboard)"
+#MISE description="Remove applied hooks"
+#USAGE arg "<hooks...>" help="Hook names to remove (e.g., dashboard anti-compact)"
 #USAGE flag "--dry-run" help="Show what would change without removing"
-#USAGE flag "--scope <scope>" default="user" help="Settings scope: user, project, or local"
+#USAGE flag "--catalog <path>" var=#true help="Additional catalog directories to search"
+#USAGE flag "--extension-dir <dir>" help="Pi extension directory (default: ~/.pi/agent/extensions)"
 
-set -eu
+set -euo pipefail
 
 DRY_RUN="${usage_dry_run:-false}"
-SCOPE="${usage_scope:-user}"
+EXT_DIR="${usage_extension_dir:-$HOME/.pi/agent/extensions}"
+STATE_DIR="${HOOKERS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/hookers}"
+STATE_FILE="$STATE_DIR/applied.json"
 HOOKS="$usage_hooks"
 
-case "$SCOPE" in
-  user)    SETTINGS_FILE="$HOME/.claude/settings.json" ;;
-  project) SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.json" ;;
-  local)   SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.local.json" ;;
-  *)       echo "Error: scope must be user, project, or local" >&2; exit 1 ;;
-esac
+# Build catalog dirs list (needed for extension regeneration)
+CATALOG_DIRS=("${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/catalog")
+if [ -n "${usage_catalog:-}" ]; then
+  for dir in $usage_catalog; do
+    [ -d "$dir" ] && CATALOG_DIRS+=("$dir")
+  done
+fi
 
-if [ ! -f "$SETTINGS_FILE" ]; then
-  echo "No settings file at $SETTINGS_FILE" >&2
+if [ ! -f "$STATE_FILE" ]; then
+  echo "No hooks applied" >&2
   exit 0
 fi
 
 REMOVED=0
 
-# Clean up temp file on failure
-trap 'rm -f "${SETTINGS_FILE}.tmp"' ERR
-
 for NAME in $HOOKS; do
-  MARKER="# hookers:${NAME}"
+  # Check if hook is in the applied list
+  IS_APPLIED=$(jq --arg name "$NAME" '[.applied[] | select(. == $name)] | length' "$STATE_FILE")
 
-  # Count matching hooks
-  COUNT=$(jq --arg marker "$MARKER" '
-    [.hooks // {} | to_entries[] | .value[] | .hooks[] | select(.command | contains($marker))] | length
-  ' "$SETTINGS_FILE")
-
-  if [ "$COUNT" -eq 0 ]; then
-    echo "No hooks found for '$NAME'" >&2
+  if [ "$IS_APPLIED" -eq 0 ]; then
+    echo "Hook '$NAME' is not applied" >&2
     continue
   fi
 
   if [ "$DRY_RUN" = "true" ]; then
-    echo "Would remove $COUNT hook(s) for '$NAME'" >&2
-    REMOVED=$((REMOVED + COUNT))
+    echo "Would remove: $NAME" >&2
+    REMOVED=$((REMOVED + 1))
     continue
   fi
 
-  # Remove hooks containing the marker, clean up empty groups and events
-  jq --arg marker "$MARKER" '
-    .hooks //= {} |
-    # Remove matching hooks from all events
-    .hooks = (.hooks | to_entries | map(
-      .value = [.value[] |
-        .hooks = [.hooks[] | select(.command | contains($marker) | not)] |
-        select((.hooks | length) > 0)
-      ] |
-      select((.value | length) > 0)
-    ) | from_entries) |
-    # Remove empty hooks object
-    if (.hooks | length) == 0 then del(.hooks) else . end
-  ' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
-    && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
-
-  REMOVED=$((REMOVED + COUNT))
-  echo "Removed $COUNT hook(s) for '$NAME'" >&2
+  # Remove from state
+  jq --arg name "$NAME" '.applied -= [$name]' \
+    "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+  REMOVED=$((REMOVED + 1))
 done
 
-if [ "$DRY_RUN" = "true" ] && [ "$REMOVED" -gt 0 ]; then
-  echo "$REMOVED hook(s) to remove" >&2
+if [ "$DRY_RUN" = "true" ]; then
+  [ "$REMOVED" -gt 0 ] && echo "$REMOVED hook(s) to remove" >&2
+  exit 0
+fi
+
+if [ "$REMOVED" -eq 0 ]; then
+  exit 0
+fi
+
+# Check if any hooks remain
+REMAINING=$(jq '.applied | length' "$STATE_FILE")
+
+if [ "$REMAINING" -eq 0 ]; then
+  # No hooks left — remove the extension
+  rm -f "$EXT_DIR/hookers.ts"
+  echo "Removed $REMOVED hook(s), extension removed" >&2
+else
+  # Regenerate extension without removed hooks
+  bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$STATE_FILE" "${CATALOG_DIRS[@]}" \
+    > "$EXT_DIR/hookers.ts"
+  echo "Removed $REMOVED hook(s), extension regenerated ($REMAINING remaining)" >&2
 fi

@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 #MISE description="Run time provider tests (BATS)"
-set -e
+set -euo pipefail
 bats "${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/test/time.bats"
