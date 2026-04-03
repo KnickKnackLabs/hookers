@@ -17,8 +17,8 @@ if [ ! -f "$STATE_FILE" ]; then
   exit 0
 fi
 
-REMOVED=0
-
+# Validate which hooks are applied
+TO_REMOVE=()
 for NAME in $HOOKS; do
   IS_APPLIED=$(jq --arg name "$NAME" '[.applied[] | select(.name == $name)] | length' "$STATE_FILE")
 
@@ -29,36 +29,43 @@ for NAME in $HOOKS; do
 
   if [ "$DRY_RUN" = "true" ]; then
     echo "Would remove: $NAME" >&2
-    REMOVED=$((REMOVED + 1))
-    continue
   fi
 
-  # Remove from state
-  jq --arg name "$NAME" '.applied = [.applied[] | select(.name != $name)]' \
-    "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
-  REMOVED=$((REMOVED + 1))
+  TO_REMOVE+=("$NAME")
 done
 
 if [ "$DRY_RUN" = "true" ]; then
-  [ "$REMOVED" -gt 0 ] && echo "$REMOVED hook(s) to remove" >&2
+  [ ${#TO_REMOVE[@]} -gt 0 ] && echo "${#TO_REMOVE[@]} hook(s) to remove" >&2
   exit 0
 fi
 
-if [ "$REMOVED" -eq 0 ]; then
+if [ ${#TO_REMOVE[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Check if any hooks remain
-REMAINING=$(jq '.applied | length' "$STATE_FILE")
+# Build speculative state with hooks removed
+SPEC_STATE="${STATE_FILE}.pending"
+cp "$STATE_FILE" "$SPEC_STATE"
+for NAME in "${TO_REMOVE[@]}"; do
+  jq --arg name "$NAME" '.applied = [.applied[] | select(.name != $name)]' \
+    "$SPEC_STATE" > "${SPEC_STATE}.tmp" && mv "${SPEC_STATE}.tmp" "$SPEC_STATE"
+done
+
+REMAINING=$(jq '.applied | length' "$SPEC_STATE")
+trap 'rm -f "$EXT_DIR/hookers.ts.tmp" "$SPEC_STATE" "${SPEC_STATE}.tmp"' ERR
 
 if [ "$REMAINING" -eq 0 ]; then
+  # No hooks left — commit state, remove extension
+  mv "$SPEC_STATE" "$STATE_FILE"
   rm -f "$EXT_DIR/hookers.ts"
-  echo "Removed $REMOVED hook(s), extension removed" >&2
+  echo "Removed ${#TO_REMOVE[@]} hook(s), extension removed" >&2
 else
-  # Regenerate extension without removed hooks
-  trap 'rm -f "$EXT_DIR/hookers.ts.tmp"' ERR
-  bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$STATE_FILE" \
-    > "$EXT_DIR/hookers.ts.tmp" \
-    && mv "$EXT_DIR/hookers.ts.tmp" "$EXT_DIR/hookers.ts"
-  echo "Removed $REMOVED hook(s), extension regenerated ($REMAINING remaining)" >&2
+  # Generate extension first — if this fails, state is unchanged
+  bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$SPEC_STATE" \
+    > "$EXT_DIR/hookers.ts.tmp"
+
+  # Success — commit state and extension
+  mv "$SPEC_STATE" "$STATE_FILE"
+  mv "$EXT_DIR/hookers.ts.tmp" "$EXT_DIR/hookers.ts"
+  echo "Removed ${#TO_REMOVE[@]} hook(s), extension regenerated ($REMAINING remaining)" >&2
 fi

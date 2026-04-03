@@ -342,6 +342,27 @@ EOF
   [[ "$output" == *"dashboard"* ]]
 }
 
+@test "unapply does not update state when regeneration fails" {
+  EXTRA_DIR="$(mktemp -d)"
+  cat > "$EXTRA_DIR/ext-hook.json" <<'EOF'
+{"name":"ext-hook","description":"External","on":"session-start","action":"run","command":"echo external"}
+EOF
+
+  hookers_apply --catalog "$EXTRA_DIR" dashboard ext-hook
+
+  # Delete the external catalog so regeneration fails
+  rm -rf "$EXTRA_DIR"
+
+  # Unapply dashboard — regeneration needs ext-hook's catalog, which is gone
+  run hookers_unapply dashboard
+  [ "$status" -ne 0 ]
+
+  # State should still have both hooks
+  run hookers_list
+  [[ "$output" == *"dashboard"* ]]
+  [[ "$output" == *"ext-hook"* ]]
+}
+
 # --- list ---
 
 @test "list shows applied hooks" {
