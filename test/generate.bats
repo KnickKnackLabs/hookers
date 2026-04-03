@@ -20,13 +20,23 @@ make_hook() {
   echo "$json" > "$CATALOG_DIR/${name}.json"
 }
 
+# Build state file with catalog path references
+make_state() {
+  local entries=""
+  for name in "$@"; do
+    [ -n "$entries" ] && entries="$entries,"
+    entries="$entries{\"name\":\"$name\",\"catalog\":\"$CATALOG_DIR\"}"
+  done
+  echo "{\"applied\":[$entries]}" > "$STATE_FILE"
+}
+
 generate() {
-  bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$STATE_FILE" "$CATALOG_DIR"
+  bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$STATE_FILE"
 }
 
 @test "generates valid TypeScript structure" {
   make_hook "test" "session-start" "run" "echo hello"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -37,7 +47,7 @@ generate() {
 
 @test "maps session-start to session_start" {
   make_hook "test" "session-start" "run" "echo hello"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -46,7 +56,7 @@ generate() {
 
 @test "maps before-prompt to before_agent_start" {
   make_hook "test" "before-prompt" "inject" "echo dashboard"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -55,7 +65,7 @@ generate() {
 
 @test "maps before-compact to session_before_compact" {
   make_hook "test" "before-compact" "block"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -64,7 +74,7 @@ generate() {
 
 @test "maps session-end to session_shutdown" {
   make_hook "test" "session-end" "run" "echo bye"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -73,7 +83,7 @@ generate() {
 
 @test "maps agent-stop to agent_end" {
   make_hook "test" "agent-stop" "run" "echo done"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -82,7 +92,7 @@ generate() {
 
 @test "maps before-tool to tool_call" {
   make_hook "test" "before-tool" "run" "echo checking"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -91,7 +101,7 @@ generate() {
 
 @test "maps after-tool to tool_result" {
   make_hook "test" "after-tool" "run" "echo done"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -100,7 +110,7 @@ generate() {
 
 @test "run action calls pi.exec" {
   make_hook "test" "session-start" "run" "echo hello"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -110,7 +120,7 @@ generate() {
 
 @test "inject action returns message" {
   make_hook "test" "before-prompt" "inject" "echo dashboard"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -121,7 +131,7 @@ generate() {
 
 @test "block action on before-compact returns cancel" {
   make_hook "test" "before-compact" "block"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
@@ -131,7 +141,7 @@ generate() {
 @test "block action on before-tool with matcher generates regex check" {
   local json='{"name":"guard","description":"Test","on":"before-tool","action":"block","command":"echo check","matcher":"bash"}'
   echo "$json" > "$CATALOG_DIR/guard.json"
-  echo '{"applied":["guard"]}' > "$STATE_FILE"
+  make_state "guard"
 
   run generate
   [ "$status" -eq 0 ]
@@ -144,7 +154,7 @@ generate() {
 @test "block action on before-tool without command blocks unconditionally" {
   local json='{"name":"blocker","description":"Test","on":"before-tool","action":"block"}'
   echo "$json" > "$CATALOG_DIR/blocker.json"
-  echo '{"applied":["blocker"]}' > "$STATE_FILE"
+  make_state "blocker"
 
   run generate
   [ "$status" -eq 0 ]
@@ -155,7 +165,7 @@ generate() {
 @test "multiple hooks generate multiple handlers" {
   make_hook "hook1" "session-start" "run" "echo one"
   make_hook "hook2" "before-prompt" "inject" "echo two"
-  echo '{"applied":["hook1","hook2"]}' > "$STATE_FILE"
+  make_state "hook1" "hook2"
 
   run generate
   [ "$status" -eq 0 ]
@@ -167,7 +177,7 @@ generate() {
 
 @test "inject action on non-before-prompt event fails" {
   make_hook "test" "session-start" "inject" "echo bad"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -ne 0 ]
@@ -176,7 +186,7 @@ generate() {
 
 @test "fails on unknown event name" {
   make_hook "test" "invalid-event" "run" "echo bad"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -ne 0 ]
@@ -192,28 +202,26 @@ generate() {
 }
 
 @test "fails with missing state file" {
-  run bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "/nonexistent" "$CATALOG_DIR"
+  run bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "/nonexistent"
   [ "$status" -ne 0 ]
   [[ "$output" == *"State file not found"* ]]
 }
 
-@test "skips hooks not found in catalog" {
-  make_hook "exists" "session-start" "run" "echo yes"
-  echo '{"applied":["exists","missing"]}' > "$STATE_FILE"
+@test "errors when catalog file is missing" {
+  # State references a hook whose catalog file doesn't exist
+  echo '{"applied":[{"name":"ghost","catalog":"/nonexistent/dir"}]}' > "$STATE_FILE"
 
   run generate
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'session_start'* ]]
-  [[ "$output" == *"Warning"*"missing"* ]]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not found"* ]]
 }
 
 @test "commands with special characters are properly escaped" {
   make_hook "test" "session-start" "run" "echo 'hello world' && date +%s > /tmp/test"
-  echo '{"applied":["test"]}' > "$STATE_FILE"
+  make_state "test"
 
   run generate
   [ "$status" -eq 0 ]
-  # The command should be JSON-escaped in the output
   [[ "$output" == *'echo'* ]]
   [[ "$output" == *'hello world'* ]]
 }

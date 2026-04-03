@@ -143,6 +143,40 @@ EOF
   rm -rf "$EXTRA_DIR"
 }
 
+@test "external catalog hooks survive re-apply without --catalog" {
+  EXTRA_DIR="$(mktemp -d)"
+  cat > "$EXTRA_DIR/ext-hook.json" <<'EOF'
+{"name":"ext-hook","description":"External","on":"session-start","action":"run","command":"echo external"}
+EOF
+
+  # Apply both built-in and external hooks
+  hookers_apply --catalog "$EXTRA_DIR" dashboard ext-hook
+  grep -q 'hookers:dashboard' "$EXT_DIR/hookers.ts"
+  grep -q 'echo external' "$EXT_DIR/hookers.ts"
+
+  # Re-apply built-in hook without --catalog — external hook should survive
+  hookers_apply dashboard
+  grep -q 'hookers:dashboard' "$EXT_DIR/hookers.ts"
+  grep -q 'echo external' "$EXT_DIR/hookers.ts"
+  rm -rf "$EXTRA_DIR"
+}
+
+@test "list resolves external catalog hooks without --catalog" {
+  EXTRA_DIR="$(mktemp -d)"
+  cat > "$EXTRA_DIR/ext-hook.json" <<'EOF'
+{"name":"ext-hook","description":"External","on":"session-start","action":"run","command":"echo external"}
+EOF
+
+  hookers_apply --catalog "$EXTRA_DIR" ext-hook
+
+  # list should find the hook via stored catalog path
+  run hookers_list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ext-hook"* ]]
+  [[ "$output" != *"not found"* ]]
+  rm -rf "$EXTRA_DIR"
+}
+
 # --- apply: event → pi mapping ---
 
 @test "before-prompt maps to before_agent_start" {

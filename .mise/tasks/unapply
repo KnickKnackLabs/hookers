@@ -2,7 +2,6 @@
 #MISE description="Remove applied hooks"
 #USAGE arg "<hooks...>" help="Hook names to remove (e.g., dashboard anti-compact)"
 #USAGE flag "--dry-run" help="Show what would change without removing"
-#USAGE flag "--catalog <path>" var=#true help="Additional catalog directories to search"
 #USAGE flag "--extension-dir <dir>" help="Pi extension directory (default: ~/.pi/agent/extensions)"
 
 set -euo pipefail
@@ -13,14 +12,6 @@ STATE_DIR="${HOOKERS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/hookers}"
 STATE_FILE="$STATE_DIR/applied.json"
 HOOKS="$usage_hooks"
 
-# Build catalog dirs list (needed for extension regeneration)
-CATALOG_DIRS=("${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/catalog")
-if [ -n "${usage_catalog:-}" ]; then
-  for dir in $usage_catalog; do
-    [ -d "$dir" ] && CATALOG_DIRS+=("$dir")
-  done
-fi
-
 if [ ! -f "$STATE_FILE" ]; then
   echo "No hooks applied" >&2
   exit 0
@@ -29,8 +20,7 @@ fi
 REMOVED=0
 
 for NAME in $HOOKS; do
-  # Check if hook is in the applied list
-  IS_APPLIED=$(jq --arg name "$NAME" '[.applied[] | select(. == $name)] | length' "$STATE_FILE")
+  IS_APPLIED=$(jq --arg name "$NAME" '[.applied[] | select(.name == $name)] | length' "$STATE_FILE")
 
   if [ "$IS_APPLIED" -eq 0 ]; then
     echo "Hook '$NAME' is not applied" >&2
@@ -44,7 +34,7 @@ for NAME in $HOOKS; do
   fi
 
   # Remove from state
-  jq --arg name "$NAME" '.applied -= [$name]' \
+  jq --arg name "$NAME" '.applied = [.applied[] | select(.name != $name)]' \
     "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
   REMOVED=$((REMOVED + 1))
 done
@@ -62,12 +52,13 @@ fi
 REMAINING=$(jq '.applied | length' "$STATE_FILE")
 
 if [ "$REMAINING" -eq 0 ]; then
-  # No hooks left — remove the extension
   rm -f "$EXT_DIR/hookers.ts"
   echo "Removed $REMOVED hook(s), extension removed" >&2
 else
   # Regenerate extension without removed hooks
-  bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$STATE_FILE" "${CATALOG_DIRS[@]}" \
-    > "$EXT_DIR/hookers.ts"
+  trap 'rm -f "$EXT_DIR/hookers.ts.tmp"' ERR
+  bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$STATE_FILE" \
+    > "$EXT_DIR/hookers.ts.tmp" \
+    && mv "$EXT_DIR/hookers.ts.tmp" "$EXT_DIR/hookers.ts"
   echo "Removed $REMOVED hook(s), extension regenerated ($REMAINING remaining)" >&2
 fi

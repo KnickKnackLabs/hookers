@@ -43,5 +43,5 @@ Each JSON file defines a hook that can be applied to the agent harness (currentl
 | Action | Description |
 |--------|-------------|
 | `run` | Fire-and-forget — run command for side effects |
-| `inject` | Run command, inject stdout as agent context |
+| `inject` | Run command, inject stdout as agent context. Only supported on `before-prompt`. |
 | `block` | Prevent the event from proceeding |

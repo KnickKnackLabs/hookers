@@ -74,26 +74,26 @@ if [ ! -f "$STATE_FILE" ]; then
   echo '{"applied":[]}' > "$STATE_FILE"
 fi
 
-CURRENTLY_APPLIED=$(jq -r '.applied[]' "$STATE_FILE" 2>/dev/null || true)
+CURRENTLY_APPLIED=$(jq -r '.applied[].name' "$STATE_FILE" 2>/dev/null || true)
 
 # Determine what's new vs already applied
-NEW_NAMES=()
+NEW_FILES=()
 EXISTING_NAMES=()
 for f in "${CATALOG_FILES[@]}"; do
   NAME=$(jq -r '.name' "$f")
   if echo "$CURRENTLY_APPLIED" | grep -qx "$NAME" 2>/dev/null; then
     EXISTING_NAMES+=("$NAME")
   else
-    NEW_NAMES+=("$NAME")
+    NEW_FILES+=("$f")
   fi
 done
 
-NEW=${#NEW_NAMES[@]}
+NEW=${#NEW_FILES[@]}
 EXISTING=${#EXISTING_NAMES[@]}
 
 if [ "$DRY_RUN" = "true" ]; then
-  for name in "${NEW_NAMES[@]}"; do
-    echo "Would add: $name" >&2
+  for f in "${NEW_FILES[@]}"; do
+    echo "Would add: $(jq -r '.name' "$f")" >&2
   done
   for name in "${EXISTING_NAMES[@]}"; do
     echo "Already applied: $name" >&2
@@ -105,15 +105,18 @@ fi
 # Build speculative state file with new hooks added
 SPEC_STATE="${STATE_FILE}.pending"
 cp "$STATE_FILE" "$SPEC_STATE"
-for name in "${NEW_NAMES[@]}"; do
-  jq --arg name "$name" '.applied += [$name] | .applied |= unique' \
+for f in "${NEW_FILES[@]}"; do
+  NAME=$(jq -r '.name' "$f")
+  CATALOG_DIR=$(cd "$(dirname "$f")" && pwd)
+  jq --arg name "$NAME" --arg catalog "$CATALOG_DIR" \
+    '.applied += [{"name": $name, "catalog": $catalog}]' \
     "$SPEC_STATE" > "${SPEC_STATE}.tmp" && mv "${SPEC_STATE}.tmp" "$SPEC_STATE"
 done
 
 # Generate extension first — if this fails, state is unchanged
 mkdir -p "$EXT_DIR"
 trap 'rm -f "$EXT_DIR/hookers.ts.tmp" "$SPEC_STATE" "${SPEC_STATE}.tmp"' ERR
-bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$SPEC_STATE" "${CATALOG_DIRS[@]}" \
+bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$SPEC_STATE" \
   > "$EXT_DIR/hookers.ts.tmp"
 
 # Extension generated successfully — commit state and extension

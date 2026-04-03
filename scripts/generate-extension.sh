@@ -1,50 +1,38 @@
 #!/usr/bin/env bash
 # Generate a pi extension from applied hooks.
-# Reads applied hooks from state file and catalog, writes hookers.ts.
+# Reads applied hooks from state file (which includes catalog paths).
 #
-# Usage: generate-extension.sh <state_file> <catalog_dirs...>
+# Usage: generate-extension.sh <state_file>
 # Output: TypeScript extension source on stdout
 
 set -euo pipefail
 
 STATE_FILE="$1"
-shift
-CATALOG_DIRS=("$@")
 
 if [ ! -f "$STATE_FILE" ]; then
   echo "Error: State file not found: $STATE_FILE" >&2
   exit 1
 fi
 
-# Read applied hook names
-APPLIED=$(jq -r '.applied[]' "$STATE_FILE" 2>/dev/null)
-if [ -z "$APPLIED" ]; then
+# Read applied hooks — each entry has name and catalog path
+HOOK_COUNT=$(jq '.applied | length' "$STATE_FILE" 2>/dev/null)
+if [ "$HOOK_COUNT" -eq 0 ]; then
   echo "Error: No hooks applied" >&2
   exit 1
 fi
 
-# Collect catalog entries for applied hooks
+# Resolve catalog files from state
 HOOKS=()
-for name in $APPLIED; do
-  found=""
-  for dir in "${CATALOG_DIRS[@]}"; do
-    file="$dir/${name}.json"
-    if [ -f "$file" ]; then
-      found="$file"
-      break
-    fi
-  done
-  if [ -z "$found" ]; then
-    echo "Warning: Applied hook '$name' not found in catalog, skipping" >&2
-    continue
+for i in $(seq 0 $((HOOK_COUNT - 1))); do
+  name=$(jq -r ".applied[$i].name" "$STATE_FILE")
+  catalog=$(jq -r ".applied[$i].catalog" "$STATE_FILE")
+  file="$catalog/${name}.json"
+  if [ ! -f "$file" ]; then
+    echo "Error: Hook '$name' not found at $file (catalog may have moved or been uninstalled)" >&2
+    exit 1
   fi
-  HOOKS+=("$found")
+  HOOKS+=("$file")
 done
-
-if [ ${#HOOKS[@]} -eq 0 ]; then
-  echo "Error: No valid hooks found" >&2
-  exit 1
-fi
 
 # Map generic event names to pi event names
 map_event() {
