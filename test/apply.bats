@@ -177,6 +177,79 @@ EOF
   rm -rf "$EXTRA_DIR"
 }
 
+@test "unapply external hook without --catalog" {
+  EXTRA_DIR="$(mktemp -d)"
+  cat > "$EXTRA_DIR/ext-hook.json" <<'EOF'
+{"name":"ext-hook","description":"External","on":"session-start","action":"run","command":"echo external"}
+EOF
+
+  hookers_apply --catalog "$EXTRA_DIR" dashboard ext-hook
+
+  # Unapply the external hook — no --catalog needed
+  run hookers_unapply ext-hook
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Removed 1"* ]]
+
+  # Built-in hook should survive
+  grep -q 'hookers:dashboard' "$EXT_DIR/hookers.ts"
+  ! grep -q 'echo external' "$EXT_DIR/hookers.ts"
+  rm -rf "$EXTRA_DIR"
+}
+
+@test "multiple external catalogs track independently" {
+  EXTRA_A="$(mktemp -d)"
+  EXTRA_B="$(mktemp -d)"
+  cat > "$EXTRA_A/hook-a.json" <<'EOF'
+{"name":"hook-a","description":"From A","on":"session-start","action":"run","command":"echo a"}
+EOF
+  cat > "$EXTRA_B/hook-b.json" <<'EOF'
+{"name":"hook-b","description":"From B","on":"session-end","action":"run","command":"echo b"}
+EOF
+
+  hookers_apply --catalog "$EXTRA_A" --catalog "$EXTRA_B" hook-a hook-b
+  grep -q 'echo a' "$EXT_DIR/hookers.ts"
+  grep -q 'echo b' "$EXT_DIR/hookers.ts"
+
+  # Unapply one — other survives from its own catalog
+  run hookers_unapply hook-a
+  [ "$status" -eq 0 ]
+  ! grep -q 'echo a' "$EXT_DIR/hookers.ts"
+  grep -q 'echo b' "$EXT_DIR/hookers.ts"
+  rm -rf "$EXTRA_A" "$EXTRA_B"
+}
+
+@test "built-in catalog takes priority over external on name conflict" {
+  EXTRA_DIR="$(mktemp -d)"
+  # External catalog has a hook named 'dashboard' with different command
+  cat > "$EXTRA_DIR/dashboard.json" <<'EOF'
+{"name":"dashboard","description":"Shadow","on":"session-start","action":"run","command":"echo shadow"}
+EOF
+
+  # Built-in catalog is searched first, so built-in dashboard wins
+  run hookers_apply --catalog "$EXTRA_DIR" dashboard
+  [ "$status" -eq 0 ]
+  grep -q 'hookers dashboard' "$EXT_DIR/hookers.ts"
+  ! grep -q 'echo shadow' "$EXT_DIR/hookers.ts"
+  rm -rf "$EXTRA_DIR"
+}
+
+@test "list --json resolves external catalog hooks" {
+  EXTRA_DIR="$(mktemp -d)"
+  cat > "$EXTRA_DIR/ext-hook.json" <<'EOF'
+{"name":"ext-hook","description":"External","on":"session-start","action":"run","command":"echo external"}
+EOF
+
+  hookers_apply --catalog "$EXTRA_DIR" ext-hook
+
+  run hookers_list --json
+  [ "$status" -eq 0 ]
+  NAME=$(echo "$output" | jq -r '.[0].name')
+  [ "$NAME" = "ext-hook" ]
+  CMD=$(echo "$output" | jq -r '.[0].command')
+  [ "$CMD" = "echo external" ]
+  rm -rf "$EXTRA_DIR"
+}
+
 # --- apply: event → pi mapping ---
 
 @test "before-prompt maps to before_agent_start" {
