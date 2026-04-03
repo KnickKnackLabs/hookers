@@ -19,6 +19,7 @@ fi
 
 # Validate which hooks are applied
 TO_REMOVE=()
+
 for NAME in $HOOKS; do
   IS_APPLIED=$(jq --arg name "$NAME" '[.applied[] | select(.name == $name)] | length' "$STATE_FILE")
 

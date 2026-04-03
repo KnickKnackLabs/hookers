@@ -331,6 +331,30 @@ EOF
   [[ "$output" == *"No hooks applied"* || "$output" == *"not applied"* ]]
 }
 
+@test "unapply does not update state when generator fails" {
+  EXTRA_DIR="$(mktemp -d)"
+  cat > "$EXTRA_DIR/ext-hook.json" <<'EOF'
+{"name":"ext-hook","description":"External","on":"session-start","action":"run","command":"echo external"}
+EOF
+
+  hookers_apply --catalog "$EXTRA_DIR" dashboard ext-hook
+
+  # Remove the external catalog so generator can't resolve ext-hook
+  rm -rf "$EXTRA_DIR"
+
+  run hookers_unapply dashboard
+  [ "$status" -ne 0 ]
+
+  # State should still have both hooks (unapply rolled back)
+  run hookers_list
+  [[ "$output" == *"dashboard"* ]]
+  [[ "$output" == *"ext-hook"* ]]
+
+  # Extension should still be intact (old version)
+  [ -f "$EXT_DIR/hookers.ts" ]
+  grep -q "hookers:dashboard" "$EXT_DIR/hookers.ts"
+}
+
 @test "unapply --dry-run does not modify state" {
   hookers_apply dashboard
 
