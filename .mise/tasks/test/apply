@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 #MISE description="Run apply/unapply tests (BATS)"
-set -e
+set -euo pipefail
 bats "${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/test/apply.bats"

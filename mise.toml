@@ -1,5 +1,5 @@
 [settings]
-# Suppress noisy per-task headers in dashboard output (single-line status needs clean stdout)
+quiet = true
 task_output = "interleave"
 
 [tools]

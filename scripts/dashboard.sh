@@ -3,7 +3,7 @@
 # Config file: ~/.config/hookers/dashboard.json
 # Output goes to stdout, which UserPromptSubmit injects into agent context.
 
-set -eu
+set -euo pipefail
 
 # HOOKERS_CWD is expected to be set by the caller when workspace context
 # matters (e.g. Claude Code hooks extract .cwd from stdin JSON before invoking hookers,

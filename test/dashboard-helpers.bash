@@ -2,7 +2,7 @@
 # Shared setup/teardown/helpers for dashboard tests
 
 setup() {
-  REPO_DIR="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+  source "$BATS_TEST_DIRNAME/test_helper.bash"
   TEST_HOME="$(mktemp -d)"
   TEST_CONFIG="$TEST_HOME/.config/hookers/dashboard.json"
   mkdir -p "$(dirname "$TEST_CONFIG")"
@@ -13,5 +13,5 @@ teardown() {
 }
 
 run_dashboard() {
-  HOOKERS_DASHBOARD_CONFIG="$TEST_CONFIG" mise -C "$REPO_DIR" run -q dashboard -- "$@"
+  HOOKERS_DASHBOARD_CONFIG="$TEST_CONFIG" hookers dashboard "$@"
 }

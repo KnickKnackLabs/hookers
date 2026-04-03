@@ -8,6 +8,7 @@
 #     datetime — 2026-03-21 14:23 EST (default)
 #     unix     — 1742605380
 #   Timezone: IANA zone (e.g. America/New_York). Defaults to UTC.
+set -euo pipefail
 
 FORMAT="${1:-datetime}"
 TZ="${2:-UTC}"

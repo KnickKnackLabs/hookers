@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-#MISE description="Apply hooks from the catalog to Claude Code settings"
-#USAGE arg "[hooks...]" help="Hook names to apply (e.g., session-id anti-compact). If none specified, applies all."
+#MISE description="Apply hooks from the catalog as a pi extension"
+#USAGE arg "[hooks...]" help="Hook names to apply (e.g., dashboard anti-compact). If none specified, applies all."
 #USAGE flag "--dry-run" help="Show what would change without applying"
-#USAGE flag "--scope <scope>" default="user" help="Settings scope: user, project, or local"
 #USAGE flag "--catalog <path>" var=#true help="Additional catalog directories to search"
+#USAGE flag "--extension-dir <dir>" help="Pi extension directory (default: ~/.pi/agent/extensions)"
 
-set -eu
+set -euo pipefail
 
 DRY_RUN="${usage_dry_run:-false}"
-SCOPE="${usage_scope:-user}"
+EXT_DIR="${usage_extension_dir:-$HOME/.pi/agent/extensions}"
+STATE_DIR="${HOOKERS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/hookers}"
+STATE_FILE="$STATE_DIR/applied.json"
 
-# Build list of catalog directories: built-in first, then any --catalog additions
+# Build list of catalog directories
 CATALOG_DIRS=("${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/catalog")
 if [ -n "${usage_catalog:-}" ]; then
   for dir in $usage_catalog; do
@@ -21,13 +23,6 @@ if [ -n "${usage_catalog:-}" ]; then
     CATALOG_DIRS+=("$dir")
   done
 fi
-
-case "$SCOPE" in
-  user)    SETTINGS_FILE="$HOME/.claude/settings.json" ;;
-  project) SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.json" ;;
-  local)   SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.local.json" ;;
-  *)       echo "Error: scope must be user, project, or local" >&2; exit 1 ;;
-esac
 
 # Collect catalog files to apply
 CATALOG_FILES=()
@@ -62,116 +57,74 @@ if [ ${#CATALOG_FILES[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Ensure settings file exists
-if [ ! -f "$SETTINGS_FILE" ]; then
-  echo "{}" > "$SETTINGS_FILE"
-fi
-
-CURRENT_HOOKS=$(jq '.hooks // {}' "$SETTINGS_FILE")
-
-# Check each catalog entry: unchanged (skip), updated (replace), or new (add)
-SKIP_FILES=()    # catalog files where the exact command already exists
-UPDATE_FILES=()  # catalog files where the marker exists but command changed
-NEW_FILES=()     # catalog files with no existing marker
-
+# Validate catalog entries have required fields
 for f in "${CATALOG_FILES[@]}"; do
-  NAME=$(jq -r '.name' "$f")
-  MARKER="# hookers:${NAME}"
-  # NOTE: assumes each catalog entry has one hook. Multi-hook entries would
-  # need to compare all commands; the marker fallback handles this correctly.
-  CMD=$(jq -r '.hooks | to_entries[0].value[0].hooks[0].command' "$f")
-
-  # Check if exact command already exists in settings
-  EXACT=$(echo "$CURRENT_HOOKS" | jq --arg cmd "$CMD" '
-    [to_entries[] | .value[] | .hooks[] | select(.command == $cmd)] | length
-  ' 2>/dev/null)
-
-  if [ "$EXACT" -gt 0 ]; then
-    SKIP_FILES+=("$f")
-  else
-    # Check if marker exists (means command changed)
-    HAS_MARKER=$(echo "$CURRENT_HOOKS" | jq --arg marker "$MARKER" '
-      [to_entries[] | .value[] | .hooks[] | select(.command | contains($marker))] | length
-    ' 2>/dev/null)
-    if [ "$HAS_MARKER" -gt 0 ]; then
-      UPDATE_FILES+=("$f")
-    else
-      NEW_FILES+=("$f")
-    fi
+  NAME=$(jq -r '.name // empty' "$f")
+  ON=$(jq -r '.on // empty' "$f")
+  ACTION=$(jq -r '.action // empty' "$f")
+  if [ -z "$NAME" ] || [ -z "$ON" ] || [ -z "$ACTION" ]; then
+    echo "Error: Invalid catalog entry $f (missing name, on, or action)" >&2
+    exit 1
   fi
 done
 
-ALREADY=${#SKIP_FILES[@]}
-UPDATED=${#UPDATE_FILES[@]}
-NEW=${#NEW_FILES[@]}
-
-if [ "$((UPDATED + NEW))" -eq 0 ]; then
-  echo "All hooks up to date ($ALREADY present)" >&2
-  exit 0
+# Load current state
+mkdir -p "$STATE_DIR"
+if [ ! -f "$STATE_FILE" ]; then
+  echo '{"applied":[]}' > "$STATE_FILE"
 fi
 
-if [ "$DRY_RUN" = "true" ]; then
-  for f in "${UPDATE_FILES[@]}"; do
-    NAME=$(jq -r '.name' "$f")
-    echo "Would update: $NAME" >&2
-  done
-  for f in "${NEW_FILES[@]}"; do
-    NAME=$(jq -r '.name' "$f")
-    echo "Would add: $NAME" >&2
-  done
-  echo "$((UPDATED + NEW)) hook(s) to apply ($NEW new, $UPDATED updated), $ALREADY already present" >&2
-  exit 0
-fi
+CURRENTLY_APPLIED=$(jq -r '.applied[].name' "$STATE_FILE" 2>/dev/null || true)
 
-# Remove outdated hooks (ones with matching marker but different command)
-for f in "${UPDATE_FILES[@]}"; do
+# Determine what's new vs already applied
+NEW_FILES=()
+EXISTING_NAMES=()
+for f in "${CATALOG_FILES[@]}"; do
   NAME=$(jq -r '.name' "$f")
-  MARKER="# hookers:${NAME}"
-  jq --arg marker "$MARKER" '
-    .hooks //= {} |
-    .hooks = (.hooks | to_entries | map(
-      .value = [.value[] |
-        .hooks = [.hooks[] | select(.command | contains($marker) | not)] |
-        select((.hooks | length) > 0)
-      ] | select((.value | length) > 0)
-    ) | from_entries) |
-    if (.hooks | length) == 0 then del(.hooks) else . end
-  ' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+  if echo "$CURRENTLY_APPLIED" | grep -qx "$NAME" 2>/dev/null; then
+    EXISTING_NAMES+=("$NAME")
+  else
+    NEW_FILES+=("$f")
+  fi
 done
 
-# Build merged hooks object from new + updated catalog entries
-APPLY_FILES=("${UPDATE_FILES[@]}" "${NEW_FILES[@]}")
-DESIRED_HOOKS=$(jq -s '
-  reduce .[] as $entry ({};
-    reduce ($entry.hooks | keys[]) as $event (.;
-      .[$event] = (.[$event] // []) + $entry.hooks[$event]
-    )
-  )
-' "${APPLY_FILES[@]}")
+NEW=${#NEW_FILES[@]}
+EXISTING=${#EXISTING_NAMES[@]}
 
-# Clean up temp file on failure
-trap 'rm -f "${SETTINGS_FILE}.tmp"' ERR
+if [ "$DRY_RUN" = "true" ]; then
+  for f in "${NEW_FILES[@]}"; do
+    echo "Would add: $(jq -r '.name' "$f")" >&2
+  done
+  for name in "${EXISTING_NAMES[@]}"; do
+    echo "Already applied: $name" >&2
+  done
+  echo "$NEW to add, $EXISTING already applied" >&2
+  exit 0
+fi
 
-jq --argjson desired "$DESIRED_HOOKS" '
-  .hooks //= {} |
-  reduce ($desired | keys[]) as $event (.;
-    reduce ($desired[$event] | to_entries[]) as $group (.;
-      ($group.value.matcher) as $matcher |
-      reduce ($group.value.hooks[] ) as $hook (.;
-        if (.hooks[$event] // [] | [.[] | select(.matcher == $matcher) | .hooks[] | select(.command == $hook.command)] | length) > 0
-        then .
-        else
-          if (.hooks[$event] // [] | [to_entries[] | select(.value.matcher == $matcher)] | length) > 0
-          then
-            .hooks[$event] = [.hooks[$event][] | if .matcher == $matcher then .hooks += [$hook] else . end]
-          else
-            .hooks[$event] = (.hooks[$event] // []) + [{"matcher": $matcher, "hooks": [$hook]}]
-          end
-        end
-      )
-    )
-  )
-' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
-  && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+# Build speculative state file with new hooks added
+SPEC_STATE="${STATE_FILE}.pending"
+cp "$STATE_FILE" "$SPEC_STATE"
+for f in "${NEW_FILES[@]}"; do
+  NAME=$(jq -r '.name' "$f")
+  CATALOG_DIR=$(cd "$(dirname "$f")" && pwd)
+  jq --arg name "$NAME" --arg catalog "$CATALOG_DIR" \
+    '.applied += [{"name": $name, "catalog": $catalog}]' \
+    "$SPEC_STATE" > "${SPEC_STATE}.tmp" && mv "${SPEC_STATE}.tmp" "$SPEC_STATE"
+done
 
-echo "Applied $((UPDATED + NEW)) hook(s) ($NEW new, $UPDATED updated), $ALREADY already present" >&2
+# Generate extension first — if this fails, state is unchanged
+mkdir -p "$EXT_DIR"
+trap 'rm -f "$EXT_DIR/hookers.ts.tmp" "$SPEC_STATE" "${SPEC_STATE}.tmp"' ERR
+bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$SPEC_STATE" \
+  > "$EXT_DIR/hookers.ts.tmp"
+
+# Extension generated successfully — commit state and extension
+mv "$SPEC_STATE" "$STATE_FILE"
+mv "$EXT_DIR/hookers.ts.tmp" "$EXT_DIR/hookers.ts"
+
+if [ "$NEW" -gt 0 ]; then
+  echo "Applied $NEW hook(s) ($EXISTING already present)" >&2
+else
+  echo "All hooks up to date ($EXISTING present), extension regenerated" >&2
+fi

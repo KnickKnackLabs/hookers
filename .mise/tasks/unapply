@@ -1,71 +1,71 @@
 #!/usr/bin/env bash
-#MISE description="Remove hooks installed from the catalog"
-#USAGE arg "<hooks...>" help="Hook names to remove (e.g., session-id dashboard)"
+#MISE description="Remove applied hooks"
+#USAGE arg "<hooks...>" help="Hook names to remove (e.g., dashboard anti-compact)"
 #USAGE flag "--dry-run" help="Show what would change without removing"
-#USAGE flag "--scope <scope>" default="user" help="Settings scope: user, project, or local"
+#USAGE flag "--extension-dir <dir>" help="Pi extension directory (default: ~/.pi/agent/extensions)"
 
-set -eu
+set -euo pipefail
 
 DRY_RUN="${usage_dry_run:-false}"
-SCOPE="${usage_scope:-user}"
+EXT_DIR="${usage_extension_dir:-$HOME/.pi/agent/extensions}"
+STATE_DIR="${HOOKERS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/hookers}"
+STATE_FILE="$STATE_DIR/applied.json"
 HOOKS="$usage_hooks"
 
-case "$SCOPE" in
-  user)    SETTINGS_FILE="$HOME/.claude/settings.json" ;;
-  project) SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.json" ;;
-  local)   SETTINGS_FILE="${CALLER_PWD:-.}/.claude/settings.local.json" ;;
-  *)       echo "Error: scope must be user, project, or local" >&2; exit 1 ;;
-esac
-
-if [ ! -f "$SETTINGS_FILE" ]; then
-  echo "No settings file at $SETTINGS_FILE" >&2
+if [ ! -f "$STATE_FILE" ]; then
+  echo "No hooks applied" >&2
   exit 0
 fi
 
-REMOVED=0
-
-# Clean up temp file on failure
-trap 'rm -f "${SETTINGS_FILE}.tmp"' ERR
-
+# Validate which hooks are applied
+TO_REMOVE=()
 for NAME in $HOOKS; do
-  MARKER="# hookers:${NAME}"
+  IS_APPLIED=$(jq --arg name "$NAME" '[.applied[] | select(.name == $name)] | length' "$STATE_FILE")
 
-  # Count matching hooks
-  COUNT=$(jq --arg marker "$MARKER" '
-    [.hooks // {} | to_entries[] | .value[] | .hooks[] | select(.command | contains($marker))] | length
-  ' "$SETTINGS_FILE")
-
-  if [ "$COUNT" -eq 0 ]; then
-    echo "No hooks found for '$NAME'" >&2
+  if [ "$IS_APPLIED" -eq 0 ]; then
+    echo "Hook '$NAME' is not applied" >&2
     continue
   fi
 
   if [ "$DRY_RUN" = "true" ]; then
-    echo "Would remove $COUNT hook(s) for '$NAME'" >&2
-    REMOVED=$((REMOVED + COUNT))
-    continue
+    echo "Would remove: $NAME" >&2
   fi
 
-  # Remove hooks containing the marker, clean up empty groups and events
-  jq --arg marker "$MARKER" '
-    .hooks //= {} |
-    # Remove matching hooks from all events
-    .hooks = (.hooks | to_entries | map(
-      .value = [.value[] |
-        .hooks = [.hooks[] | select(.command | contains($marker) | not)] |
-        select((.hooks | length) > 0)
-      ] |
-      select((.value | length) > 0)
-    ) | from_entries) |
-    # Remove empty hooks object
-    if (.hooks | length) == 0 then del(.hooks) else . end
-  ' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
-    && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
-
-  REMOVED=$((REMOVED + COUNT))
-  echo "Removed $COUNT hook(s) for '$NAME'" >&2
+  TO_REMOVE+=("$NAME")
 done
 
-if [ "$DRY_RUN" = "true" ] && [ "$REMOVED" -gt 0 ]; then
-  echo "$REMOVED hook(s) to remove" >&2
+if [ "$DRY_RUN" = "true" ]; then
+  [ ${#TO_REMOVE[@]} -gt 0 ] && echo "${#TO_REMOVE[@]} hook(s) to remove" >&2
+  exit 0
+fi
+
+if [ ${#TO_REMOVE[@]} -eq 0 ]; then
+  exit 0
+fi
+
+# Build speculative state with hooks removed
+SPEC_STATE="${STATE_FILE}.pending"
+cp "$STATE_FILE" "$SPEC_STATE"
+for NAME in "${TO_REMOVE[@]}"; do
+  jq --arg name "$NAME" '.applied = [.applied[] | select(.name != $name)]' \
+    "$SPEC_STATE" > "${SPEC_STATE}.tmp" && mv "${SPEC_STATE}.tmp" "$SPEC_STATE"
+done
+
+REMAINING=$(jq '.applied | length' "$SPEC_STATE")
+trap 'rm -f "$EXT_DIR/hookers.ts.tmp" "$SPEC_STATE" "${SPEC_STATE}.tmp"' ERR
+
+if [ "$REMAINING" -eq 0 ]; then
+  # No hooks left — commit state, remove extension
+  mv "$SPEC_STATE" "$STATE_FILE"
+  rm -f "$EXT_DIR/hookers.ts"
+  echo "Removed ${#TO_REMOVE[@]} hook(s), extension removed" >&2
+else
+  # Generate extension first — if this fails, state is unchanged
+  bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$SPEC_STATE" \
+    > "$EXT_DIR/hookers.ts.tmp"
+
+  # Success — commit state and extension
+  mv "$SPEC_STATE" "$STATE_FILE"
+  mv "$EXT_DIR/hookers.ts.tmp" "$EXT_DIR/hookers.ts"
+  echo "Removed ${#TO_REMOVE[@]} hook(s), extension regenerated ($REMAINING remaining)" >&2
 fi

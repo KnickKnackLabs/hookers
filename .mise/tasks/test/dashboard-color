@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 #MISE description="Run dashboard color tests (BATS)"
-set -e
+set -euo pipefail
 bats "${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/test/dashboard-color.bats"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Dashboard provider: GitHub token days until expiry
+set -euo pipefail
 EXPIRY=$(gh api /user -i 2>/dev/null | grep -i github-authentication-token-expiration | sed 's/.*: //' | tr -d '\r')
 [ -z "$EXPIRY" ] && exit 0
 

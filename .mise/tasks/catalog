@@ -1,23 +1,39 @@
 #!/usr/bin/env bash
 #MISE description="List available hooks in the catalog"
 #USAGE flag "--json" help="Output raw JSON"
+#USAGE flag "--catalog <path>" var=#true help="Additional catalog directories to search"
 
-set -eu
+set -euo pipefail
 
-CATALOG_DIR="${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/catalog"
-
-if [ ! -d "$CATALOG_DIR" ]; then
-  echo "No catalog directory found" >&2
-  exit 1
+CATALOG_DIRS=("${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/catalog")
+if [ -n "${usage_catalog:-}" ]; then
+  for dir in $usage_catalog; do
+    [ -d "$dir" ] && CATALOG_DIRS+=("$dir")
+  done
 fi
 
-if [ "${usage_json:-false}" = "true" ]; then
-  jq -s '.' "$CATALOG_DIR"/*.json
+# Collect all catalog JSON files
+FILES=()
+for dir in "${CATALOG_DIRS[@]}"; do
+  for f in "$dir"/*.json; do
+    [ -f "$f" ] && FILES+=("$f")
+  done
+done
+
+if [ ${#FILES[@]} -eq 0 ]; then
+  echo "No hooks in catalog" >&2
   exit 0
 fi
 
-for f in "$CATALOG_DIR"/*.json; do
+if [ "${usage_json:-false}" = "true" ]; then
+  jq -s '.' "${FILES[@]}"
+  exit 0
+fi
+
+for f in "${FILES[@]}"; do
   NAME=$(jq -r '.name' "$f")
   DESC=$(jq -r '.description' "$f")
-  printf "  %-20s %s\n" "$NAME" "$DESC"
+  ON=$(jq -r '.on' "$f")
+  ACTION=$(jq -r '.action' "$f")
+  printf "  %-20s %-16s %-8s %s\n" "$NAME" "$ON" "$ACTION" "$DESC"
 done
