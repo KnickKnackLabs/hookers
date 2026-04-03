@@ -85,7 +85,7 @@ for file in "${HOOKS[@]}"; do
   case "$action" in
     run)
       cat <<EOF
-  pi.on("$pi_event", async (_event, ctx) => {
+  pi.on("$pi_event", async () => {
     await pi.exec("bash", ["-c", $(jq -n --arg c "$command" '$c')]);
   });
 EOF
@@ -94,7 +94,7 @@ EOF
     inject)
       if [ "$pi_event" = "before_agent_start" ]; then
         cat <<EOF
-  pi.on("$pi_event", async (_event, ctx) => {
+  pi.on("$pi_event", async () => {
     const result = await pi.exec("bash", ["-c", $(jq -n --arg c "$command" '$c')]);
     if (result.code === 0 && result.stdout.trim()) {
       return {
@@ -115,37 +115,41 @@ EOF
     block)
       if [ "$pi_event" = "session_before_compact" ]; then
         cat <<EOF
-  pi.on("$pi_event", async (_event, ctx) => {
+  pi.on("$pi_event", async () => {
     return { cancel: true };
   });
 EOF
       elif [ "$pi_event" = "tool_call" ]; then
-        if [ -n "$matcher" ]; then
+        if [ -n "$matcher" ] && [ -n "$command" ]; then
           cat <<EOF
-  pi.on("$pi_event", async (event, ctx) => {
+  pi.on("$pi_event", async (event) => {
     if (new RegExp($(jq -n --arg m "$matcher" '$m')).test(event.toolName)) {
-      if ($(jq -n --arg c "$command" '$c')) {
-        const result = await pi.exec("bash", ["-c", $(jq -n --arg c "$command" '$c')]);
-        if (result.code !== 0) {
-          return { block: true, reason: result.stderr.trim() || "Blocked by $name hook" };
-        }
+      const result = await pi.exec("bash", ["-c", $(jq -n --arg c "$command" '$c')]);
+      if (result.code !== 0) {
+        return { block: true, reason: result.stderr.trim() || "Blocked by $name hook" };
       }
     }
   });
 EOF
-        else
+        elif [ -n "$command" ]; then
           cat <<EOF
-  pi.on("$pi_event", async (event, ctx) => {
+  pi.on("$pi_event", async () => {
     const result = await pi.exec("bash", ["-c", $(jq -n --arg c "$command" '$c')]);
     if (result.code !== 0) {
       return { block: true, reason: result.stderr.trim() || "Blocked by $name hook" };
     }
   });
 EOF
+        else
+          cat <<EOF
+  pi.on("$pi_event", async () => {
+    return { block: true, reason: "Blocked by $name hook" };
+  });
+EOF
         fi
       else
         cat <<EOF
-  pi.on("$pi_event", async (_event, ctx) => {
+  pi.on("$pi_event", async () => {
     return { cancel: true };
   });
 EOF

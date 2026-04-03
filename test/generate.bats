@@ -128,6 +128,30 @@ generate() {
   [[ "$output" == *'cancel: true'* ]]
 }
 
+@test "block action on before-tool with matcher generates regex check" {
+  local json='{"name":"guard","description":"Test","on":"before-tool","action":"block","command":"echo check","matcher":"bash"}'
+  echo "$json" > "$CATALOG_DIR/guard.json"
+  echo '{"applied":["guard"]}' > "$STATE_FILE"
+
+  run generate
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'tool_call'* ]]
+  [[ "$output" == *'RegExp'* ]]
+  [[ "$output" == *'event.toolName'* ]]
+  [[ "$output" == *'block: true'* ]]
+}
+
+@test "block action on before-tool without command blocks unconditionally" {
+  local json='{"name":"blocker","description":"Test","on":"before-tool","action":"block"}'
+  echo "$json" > "$CATALOG_DIR/blocker.json"
+  echo '{"applied":["blocker"]}' > "$STATE_FILE"
+
+  run generate
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'tool_call'* ]]
+  [[ "$output" == *'block: true'* ]]
+}
+
 @test "multiple hooks generate multiple handlers" {
   make_hook "hook1" "session-start" "run" "echo one"
   make_hook "hook2" "before-prompt" "inject" "echo two"

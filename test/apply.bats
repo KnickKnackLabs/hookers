@@ -106,6 +106,27 @@ EOF
   rm -rf "$EXTRA_DIR"
 }
 
+@test "apply regenerates extension when catalog changes" {
+  EXTRA_DIR="$(mktemp -d)"
+  cat > "$EXTRA_DIR/updatable.json" <<'EOF'
+{"name":"updatable","description":"Test","on":"session-start","action":"run","command":"echo v1"}
+EOF
+
+  hookers_apply --catalog "$EXTRA_DIR" updatable
+  grep -q 'echo v1' "$EXT_DIR/hookers.ts"
+
+  # Update the catalog entry
+  cat > "$EXTRA_DIR/updatable.json" <<'EOF'
+{"name":"updatable","description":"Test","on":"session-start","action":"run","command":"echo v2"}
+EOF
+
+  # Re-apply — should regenerate with new command
+  hookers_apply --catalog "$EXTRA_DIR" updatable
+  grep -q 'echo v2' "$EXT_DIR/hookers.ts"
+  ! grep -q 'echo v1' "$EXT_DIR/hookers.ts"
+  rm -rf "$EXTRA_DIR"
+}
+
 # --- apply: event → pi mapping ---
 
 @test "before-prompt maps to before_agent_start" {

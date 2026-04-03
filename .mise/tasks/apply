@@ -32,7 +32,7 @@ if [ -n "$HOOKS" ]; then
     FOUND=""
     for dir in "${CATALOG_DIRS[@]}"; do
       FILE="$dir/${NAME}.json"
-      if [ -f "$FILE" ] && [ "$(basename "$FILE")" != "README.md" ]; then
+      if [ -f "$FILE" ]; then
         FOUND="$FILE"
         break
       fi
@@ -108,10 +108,12 @@ for name in "${NEW_NAMES[@]}"; do
     "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
 done
 
-# Generate and install the pi extension
+# Always regenerate the extension — catalog entries may have changed
 mkdir -p "$EXT_DIR"
+trap 'rm -f "$EXT_DIR/hookers.ts.tmp"' ERR
 bash "$MISE_CONFIG_ROOT/scripts/generate-extension.sh" "$STATE_FILE" "${CATALOG_DIRS[@]}" \
-  > "$EXT_DIR/hookers.ts"
+  > "$EXT_DIR/hookers.ts.tmp" \
+  && mv "$EXT_DIR/hookers.ts.tmp" "$EXT_DIR/hookers.ts"
 
 if [ "$NEW" -gt 0 ]; then
   echo "Applied $NEW hook(s) ($EXISTING already present)" >&2
