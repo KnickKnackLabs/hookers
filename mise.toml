@@ -2,6 +2,10 @@
 quiet = true
 task_output = "interleave"
 
+[plugins]
+shiv = "https://github.com/KnickKnackLabs/vfox-shiv"
+
 [tools]
 jq = "latest"
 bats = "1.13.0"
+"shiv:emails" = "0.1.0"
