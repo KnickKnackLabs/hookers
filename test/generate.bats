@@ -139,6 +139,41 @@ generate() {
   [[ "$output" == *'HOOKERS_SESSION_ID'* ]]
 }
 
+@test "inject action JSON-escapes command with special characters" {
+  # Build catalog entry with jq to handle embedded quotes
+  jq -n --arg cmd 'echo "hello" && date +%s' \
+    '{name:"tricky",description:"Test hook",on:"before-prompt",action:"inject",command:$cmd}' \
+    > "$CATALOG_DIR/tricky.json"
+  make_state "tricky"
+
+  run generate
+  [ "$status" -eq 0 ]
+  # Command should be in a JSON string, not a template literal
+  [[ "$output" == *'"echo \"hello\" && date +%s"'* ]]
+  # Should NOT contain raw unescaped quotes inside template literal
+  [[ "$output" != *'`${prefix}echo "hello"'* ]]
+}
+
+@test "inject action JSON-escapes hook name with special characters" {
+  make_hook "my-hook" "before-prompt" "inject" "echo test"
+  make_state "my-hook"
+
+  run generate
+  [ "$status" -eq 0 ]
+  # Name in customType should be a JSON string
+  [[ "$output" == *'"hookers:my-hook"'* ]]
+}
+
+@test "inject action uses export for env so compound commands work" {
+  make_hook "dash" "before-prompt" "inject" "cmd1 && cmd2"
+  make_state "dash"
+
+  run generate
+  [ "$status" -eq 0 ]
+  # Should use export, not inline VAR=val prefix
+  [[ "$output" == *'export HOOKERS_SESSION_ID'* ]]
+}
+
 @test "block action on before-compact returns cancel" {
   make_hook "test" "before-compact" "block"
   make_state "test"

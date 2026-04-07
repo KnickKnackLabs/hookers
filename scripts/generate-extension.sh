@@ -52,7 +52,9 @@ map_event() {
 TEMPLATES_DIR="$(cd "$(dirname "$0")/../templates" && pwd)"
 
 # Render a template file, replacing {{key}} placeholders with values.
-# Usage: render_template <file> key1=val1 key2=val2 ...
+# Values are interpolated as-is. For JSON-encoded values, pass key_json=val
+# and use {{key_json}} in the template — the value will be JSON-escaped via jq.
+# Usage: render_template <file> key=val key_json=val ...
 render_template() {
   local file="$1"; shift
   local content
@@ -60,6 +62,9 @@ render_template() {
   for pair in "$@"; do
     local key="${pair%%=*}"
     local val="${pair#*=}"
+    if [[ "$key" == *_json ]]; then
+      val=$(jq -n --arg v "$val" '$v')
+    fi
     content="${content//\{\{$key\}\}/$val}"
   done
   echo "$content"
@@ -99,7 +104,8 @@ EOF
       if [ "$pi_event" = "before_agent_start" ]; then
         echo ""
         render_template "$TEMPLATES_DIR/inject-before-prompt.ts.tmpl" \
-          "name=$name" "description=$desc" "command=$command"
+          "name=$name" "description=$desc" \
+          "name_json=hookers:$name" "command_json=$command"
       else
         echo "Error: inject action only supported on before-prompt event (got '$on' for hook '$name')" >&2
         exit 1

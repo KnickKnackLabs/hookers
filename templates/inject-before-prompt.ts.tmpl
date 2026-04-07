@@ -1,12 +1,12 @@
   // {{name}} — {{description}}
   pi.on("before_agent_start", async (_event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
-    const env = sessionId ? `HOOKERS_SESSION_ID=${sessionId} ` : "";
-    const result = await pi.exec("bash", ["-c", `${env}{{command}}`]);
+    const prefix = sessionId ? `export HOOKERS_SESSION_ID=${sessionId} && ` : "";
+    const result = await pi.exec("bash", ["-c", `${prefix}` + {{command_json}}]);
     if (result.code === 0 && result.stdout.trim()) {
       return {
         message: {
-          customType: "hookers:{{name}}",
+          customType: {{name_json}},
           content: result.stdout.trim(),
           display: false,
         },

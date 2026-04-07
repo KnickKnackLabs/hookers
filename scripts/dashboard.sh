@@ -58,8 +58,11 @@ fi
 SESSION_ID="${HOOKERS_SESSION_ID:-}"
 CACHE_DIR=""
 if [ -n "$SESSION_ID" ]; then
-  CACHE_DIR="${HOOKERS_DASHBOARD_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/hookers/dashboard}/$SESSION_ID"
+  CACHE_BASE="${HOOKERS_DASHBOARD_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/hookers/dashboard}"
+  CACHE_DIR="$CACHE_BASE/$SESSION_ID"
   mkdir -p "$CACHE_DIR"
+  # Opportunistic prune: remove session cache dirs older than 7 days
+  find "$CACHE_BASE" -maxdepth 1 -type d -mtime +7 -not -path "$CACHE_BASE" -exec rm -rf {} + 2>/dev/null || true
 fi
 
 # Generate a cache key from a command string.
@@ -87,7 +90,7 @@ for ((i=0; i<ITEM_COUNT; i++)); do
   (
     # Check cache
     if [ -n "$CACHE_DIR" ] && [ "$CACHE_TTL" -gt 0 ]; then
-      KEY=$(cache_key "$CMD")
+      KEY=$(cache_key "$i:$CMD")
       CACHE_FILE="$CACHE_DIR/$KEY"
       if [ -f "$CACHE_FILE" ]; then
         NOW=$(date +%s)
@@ -114,10 +117,10 @@ for ((i=0; i<ITEM_COUNT; i++)); do
     mv "$RESULTS_DIR/$i.value.tmp" "$RESULTS_DIR/$i.value"
     mv "$RESULTS_DIR/$i.dur.tmp" "$RESULTS_DIR/$i.dur"
 
-    # Write to cache
+    # Write to cache (atomic via tmp+mv)
     if [ -n "$CACHE_DIR" ] && [ "$CACHE_TTL" -gt 0 ]; then
-      KEY=$(cache_key "$CMD")
-      echo -n "$VALUE" > "$CACHE_DIR/$KEY"
+      KEY=$(cache_key "$i:$CMD")
+      echo -n "$VALUE" > "$CACHE_DIR/$KEY.tmp" && mv "$CACHE_DIR/$KEY.tmp" "$CACHE_DIR/$KEY"
     fi
   ) &
 done

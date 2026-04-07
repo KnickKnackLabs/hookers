@@ -129,6 +129,31 @@ EOF
   [[ "$output" != *"(2s)"* ]]
 }
 
+@test "duplicate commands at different positions have separate caches" {
+  cat > "$TEST_CONFIG" << 'EOF'
+{"items": [
+  {"label": "first", "command": "date +%s%N", "cache": 60},
+  {"label": "second", "command": "date +%s%N", "cache": 60}
+]}
+EOF
+
+  run_cached
+  [ "$status" -eq 0 ]
+  # Both items run the same command but should cache independently
+  # Extract values — they may differ due to nanosecond timing
+  local first second
+  first=$(echo "$output" | grep -o 'first: [0-9]*' | cut -d' ' -f2)
+  second=$(echo "$output" | grep -o 'second: [0-9]*' | cut -d' ' -f2)
+  [ -n "$first" ]
+  [ -n "$second" ]
+
+  # Second run — both should return their own cached values
+  run_cached
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"first: $first"* ]]
+  [[ "$output" == *"second: $second"* ]]
+}
+
 @test "mixed cached and uncached items" {
   COUNTER="$TEST_HOME/counter"
   echo "0" > "$COUNTER"
