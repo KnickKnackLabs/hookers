@@ -94,7 +94,7 @@ for ((i=0; i<ITEM_COUNT; i++)); do
       CACHE_FILE="$CACHE_DIR/$KEY"
       if [ -f "$CACHE_FILE" ]; then
         NOW=$(date +%s)
-        FILE_MOD=$(stat -f %m "$CACHE_FILE" 2>/dev/null || stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)
+        FILE_MOD=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)
         AGE=$((NOW - FILE_MOD))
         if [ "$AGE" -lt "$CACHE_TTL" ]; then
           # Cache hit

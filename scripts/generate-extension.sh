@@ -56,6 +56,9 @@ TEMPLATES_DIR="$(cd "$(dirname "$0")/../templates" && pwd)"
 # and use {{key_json}} in the template — the value will be JSON-escaped via jq.
 # Usage: render_template <file> key=val key_json=val ...
 render_template() {
+  # Disable patsub_replacement (bash 5.2+) — prevents & in replacement
+  # strings from expanding to the matched pattern.
+  shopt -u patsub_replacement 2>/dev/null || true
   local file="$1"; shift
   local content
   content=$(cat "$file")
