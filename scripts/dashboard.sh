@@ -26,17 +26,17 @@ NO_LABELS="${HOOKERS_DASHBOARD_NO_LABELS:-}"
 NO_DURATION="${HOOKERS_DASHBOARD_NO_DURATION:-}"
 DURATION_THRESHOLD="${HOOKERS_DASHBOARD_DURATION_THRESHOLD:-1}"
 
-# Debug logging. Always writes to the log file for now (diagnosing latency).
-# TODO: gate behind HOOKERS_DEBUG=1 once investigation is done.
-DEBUG_LOG="${HOOKERS_DASHBOARD_DEBUG_LOG:-${XDG_CACHE_HOME:-$HOME/.cache}/hookers/dashboard-debug.log}"
-mkdir -p "$(dirname "$DEBUG_LOG")"
+# Debug logging: HOOKERS_DEBUG=1 to enable.
+# Appends per-provider cache/timing info to a log file.
+DEBUG_LOG=""
+if [ "${HOOKERS_DEBUG:-}" = "1" ]; then
+  DEBUG_LOG="${HOOKERS_DASHBOARD_DEBUG_LOG:-${XDG_CACHE_HOME:-$HOME/.cache}/hookers/dashboard-debug.log}"
+  mkdir -p "$(dirname "$DEBUG_LOG")"
+fi
 
-# Write a debug log line with timestamp.
-# Usage: debug_log "message"
+# Write a debug log line with timestamp. No-op when debug is off.
 debug_log() {
-  if [ -n "$DEBUG_LOG" ]; then
-    printf "%s %s\n" "$(date '+%H:%M:%S')" "$1" >> "$DEBUG_LOG"
-  fi
+  [ -n "$DEBUG_LOG" ] && printf "%s %s\n" "$(date '+%H:%M:%S')" "$1" >> "$DEBUG_LOG" || true
 }
 
 # Color: explicit setting > TTY detection
@@ -64,6 +64,25 @@ else
   DIM=""
   RESET=""
 fi
+
+# Millisecond timestamps: detect whether date supports %N (nanoseconds).
+# macOS BSD date may emit literal 'N' — probe once and fall back to seconds.
+_probe=$(date +%s%N 2>/dev/null)
+if echo "$_probe" | grep -q '[^0-9]'; then
+  HAS_NS=0
+else
+  HAS_NS=1
+fi
+unset _probe
+
+# Get current time in milliseconds (falls back to seconds × 1000).
+now_ms() {
+  if [ "$HAS_NS" = "1" ]; then
+    echo $(( $(date +%s%N) / 1000000 ))
+  else
+    echo $(( $(date +%s) * 1000 ))
+  fi
+}
 
 # Cache: session-scoped provider result caching.
 # Requires HOOKERS_SESSION_ID to be set (by the agent harness via the extension).
@@ -95,7 +114,7 @@ cache_key() {
 RESULTS_DIR=$(mktemp -d)
 trap 'rm -rf "$RESULTS_DIR"' EXIT
 
-DASH_START_MS=$(($(date +%s%N 2>/dev/null || echo "$(date +%s)000000000") / 1000000))
+DASH_START_MS=$(now_ms)
 debug_log "--- dashboard start (session=${SESSION_ID:-none}) ---"
 
 # Launch all providers in parallel
@@ -130,10 +149,10 @@ for ((i=0; i<ITEM_COUNT; i++)); do
     fi
 
     # Cache miss or no caching — run the provider
-    START_NS=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
+    START_MS=$(now_ms)
     VALUE=$(timeout "${TIMEOUT}s" bash -c "$CMD" 2>/dev/null | tr -d '\n')
-    END_NS=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
-    ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+    END_MS=$(now_ms)
+    ELAPSED_MS=$((END_MS - START_MS))
     echo -n "$VALUE" > "$RESULTS_DIR/$i.value.tmp"
     echo -n "$ELAPSED_MS" > "$RESULTS_DIR/$i.durms.tmp"
     mv "$RESULTS_DIR/$i.value.tmp" "$RESULTS_DIR/$i.value"
@@ -179,7 +198,7 @@ for ((i=0; i<ITEM_COUNT; i++)); do
   fi
 done
 
-DASH_END_MS=$(($(date +%s%N 2>/dev/null || echo "$(date +%s)000000000") / 1000000))
+DASH_END_MS=$(now_ms)
 DASH_TOTAL_MS=$((DASH_END_MS - DASH_START_MS))
 debug_log "--- dashboard done: ${DASH_TOTAL_MS}ms (${HIT_COUNT} hit, ${MISS_COUNT} miss, ${NOCACHE_COUNT} no-cache) ---"
 

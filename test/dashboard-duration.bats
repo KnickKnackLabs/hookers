@@ -28,3 +28,21 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" != *"("* ]]
 }
+
+@test "rounds 1500ms to 2s" {
+  cat > "$TEST_CONFIG" << 'EOF'
+{"items": [{"label": "mid", "command": "sleep 1.5 && echo done"}]}
+EOF
+  run run_dashboard
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"(2s)"* ]]
+}
+
+@test "rounds 2500ms to 3s" {
+  cat > "$TEST_CONFIG" << 'EOF'
+{"items": [{"label": "slow", "command": "sleep 2.5 && echo done"}]}
+EOF
+  run run_dashboard
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"(3s)"* ]]
+}
