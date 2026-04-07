@@ -1,0 +1,15 @@
+  // {{name}} — {{description}}
+  pi.on("before_agent_start", async (_event, ctx) => {
+    const sessionId = ctx.sessionManager.getSessionId();
+    const env = sessionId ? `HOOKERS_SESSION_ID=${sessionId} ` : "";
+    const result = await pi.exec("bash", ["-c", `${env}{{command}}`]);
+    if (result.code === 0 && result.stdout.trim()) {
+      return {
+        message: {
+          customType: "hookers:{{name}}",
+          content: result.stdout.trim(),
+          display: false,
+        },
+      };
+    }
+  });

@@ -129,6 +129,16 @@ generate() {
   [[ "$output" == *'result.stdout'* ]]
 }
 
+@test "inject action passes session ID to command" {
+  make_hook "dash" "before-prompt" "inject" "hookers dashboard"
+  make_state "dash"
+
+  run generate
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'sessionManager.getSessionId()'* ]]
+  [[ "$output" == *'HOOKERS_SESSION_ID'* ]]
+}
+
 @test "block action on before-compact returns cancel" {
   make_hook "test" "before-compact" "block"
   make_state "test"

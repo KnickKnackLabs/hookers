@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Run dashboard cache tests (BATS)"
+set -euo pipefail
+bats "${MISE_CONFIG_ROOT:?MISE_CONFIG_ROOT not set}/test/dashboard-cache.bats"
