@@ -10,5 +10,6 @@ mise run test:dashboard-labels
 mise run test:dashboard-duration
 mise run test:dashboard-color
 mise run test:dashboard-width
+mise run test:dashboard-cache
 mise run test:provider
 mise run test:time

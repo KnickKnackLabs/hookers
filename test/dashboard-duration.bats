@@ -24,7 +24,7 @@ EOF
   cat > "$TEST_CONFIG" << 'EOF'
 {"items": [{"label": "fast", "command": "echo quick"}]}
 EOF
-  run run_dashboard
+  HOOKERS_DASHBOARD_DURATION_THRESHOLD=10 run run_dashboard
   [ "$status" -eq 0 ]
   [[ "$output" != *"("* ]]
 }

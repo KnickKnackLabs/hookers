@@ -9,7 +9,7 @@ load dashboard-helpers
   {"label": "b", "command": "echo two"}
 ]}
 EOF
-  run run_dashboard --no-labels
+  run run_dashboard --no-labels --no-duration
   [ "$status" -eq 0 ]
   [[ "$output" == "[dashboard] one | two" ]]
 }
@@ -21,7 +21,7 @@ EOF
   {"label": "b", "command": "echo two"}
 ]}
 EOF
-  run run_dashboard --no-labels --no-prefix
+  run run_dashboard --no-labels --no-prefix --no-duration
   [ "$status" -eq 0 ]
   [[ "$output" == "one | two" ]]
 }

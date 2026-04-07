@@ -52,6 +52,32 @@ else
   RESET=""
 fi
 
+# Cache: session-scoped provider result caching.
+# Requires HOOKERS_SESSION_ID to be set (by the agent harness via the extension).
+# Per-item TTL via "cache": <seconds> in config. Items without "cache" always run.
+SESSION_ID="${HOOKERS_SESSION_ID:-}"
+CACHE_DIR=""
+if [ -n "$SESSION_ID" ]; then
+  CACHE_BASE="${HOOKERS_DASHBOARD_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/hookers/dashboard}"
+  CACHE_DIR="$CACHE_BASE/$SESSION_ID"
+  mkdir -p "$CACHE_DIR"
+  # Opportunistic prune: remove session cache dirs older than 7 days
+  find "$CACHE_BASE" -maxdepth 1 -type d -mtime +7 -not -path "$CACHE_BASE" -exec rm -rf {} + 2>/dev/null || true
+fi
+
+# Generate a cache key from a command string.
+# Uses md5 (macOS) or md5sum (Linux), falling back to shasum.
+cache_key() {
+  local cmd="$1"
+  if command -v md5 >/dev/null 2>&1; then
+    echo -n "$cmd" | md5
+  elif command -v md5sum >/dev/null 2>&1; then
+    echo -n "$cmd" | md5sum | cut -d' ' -f1
+  else
+    echo -n "$cmd" | shasum -a 256 | cut -d' ' -f1
+  fi
+}
+
 # Create temp dir for parallel provider results
 RESULTS_DIR=$(mktemp -d)
 trap 'rm -rf "$RESULTS_DIR"' EXIT
@@ -60,7 +86,28 @@ trap 'rm -rf "$RESULTS_DIR"' EXIT
 for ((i=0; i<ITEM_COUNT; i++)); do
   CMD=$(jq -r --argjson i "$i" '.items[$i].command' "$CONFIG")
   TIMEOUT=$(jq -r --argjson i "$i" '.items[$i].timeout // 5' "$CONFIG")
+  CACHE_TTL=$(jq -r --argjson i "$i" '.items[$i].cache // 0' "$CONFIG")
   (
+    # Check cache
+    if [ -n "$CACHE_DIR" ] && [ "$CACHE_TTL" -gt 0 ]; then
+      KEY=$(cache_key "$i:$CMD")
+      CACHE_FILE="$CACHE_DIR/$KEY"
+      if [ -f "$CACHE_FILE" ]; then
+        NOW=$(date +%s)
+        FILE_MOD=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)
+        AGE=$((NOW - FILE_MOD))
+        if [ "$AGE" -lt "$CACHE_TTL" ]; then
+          # Cache hit
+          cat "$CACHE_FILE" > "$RESULTS_DIR/$i.value.tmp"
+          echo -n "0" > "$RESULTS_DIR/$i.dur.tmp"
+          mv "$RESULTS_DIR/$i.value.tmp" "$RESULTS_DIR/$i.value"
+          mv "$RESULTS_DIR/$i.dur.tmp" "$RESULTS_DIR/$i.dur"
+          exit 0
+        fi
+      fi
+    fi
+
+    # Cache miss or no caching — run the provider
     START_S=$(date +%s)
     VALUE=$(timeout "${TIMEOUT}s" bash -c "$CMD" 2>/dev/null | tr -d '\n')
     END_S=$(date +%s)
@@ -69,6 +116,13 @@ for ((i=0; i<ITEM_COUNT; i++)); do
     echo -n "$ELAPSED_S" > "$RESULTS_DIR/$i.dur.tmp"
     mv "$RESULTS_DIR/$i.value.tmp" "$RESULTS_DIR/$i.value"
     mv "$RESULTS_DIR/$i.dur.tmp" "$RESULTS_DIR/$i.dur"
+
+    # Write to cache (atomic via tmp+mv) — skip empty results so
+    # transient failures don't suppress retries until TTL expires.
+    if [ -n "$CACHE_DIR" ] && [ "$CACHE_TTL" -gt 0 ] && [ -n "$VALUE" ]; then
+      KEY=$(cache_key "$i:$CMD")
+      echo -n "$VALUE" > "$CACHE_DIR/$KEY.tmp" && mv "$CACHE_DIR/$KEY.tmp" "$CACHE_DIR/$KEY"
+    fi
   ) &
 done
 wait
