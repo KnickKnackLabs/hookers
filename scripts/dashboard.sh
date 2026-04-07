@@ -26,6 +26,19 @@ NO_LABELS="${HOOKERS_DASHBOARD_NO_LABELS:-}"
 NO_DURATION="${HOOKERS_DASHBOARD_NO_DURATION:-}"
 DURATION_THRESHOLD="${HOOKERS_DASHBOARD_DURATION_THRESHOLD:-1}"
 
+# Debug logging. Always writes to the log file for now (diagnosing latency).
+# TODO: gate behind HOOKERS_DEBUG=1 once investigation is done.
+DEBUG_LOG="${HOOKERS_DASHBOARD_DEBUG_LOG:-${XDG_CACHE_HOME:-$HOME/.cache}/hookers/dashboard-debug.log}"
+mkdir -p "$(dirname "$DEBUG_LOG")"
+
+# Write a debug log line with timestamp.
+# Usage: debug_log "message"
+debug_log() {
+  if [ -n "$DEBUG_LOG" ]; then
+    printf "%s %s\n" "$(date '+%H:%M:%S')" "$1" >> "$DEBUG_LOG"
+  fi
+}
+
 # Color: explicit setting > TTY detection
 if [ "${HOOKERS_DASHBOARD_COLOR:-}" = "1" ]; then
   USE_COLOR=1
@@ -82,6 +95,9 @@ cache_key() {
 RESULTS_DIR=$(mktemp -d)
 trap 'rm -rf "$RESULTS_DIR"' EXIT
 
+DASH_START_MS=$(($(date +%s%N 2>/dev/null || echo "$(date +%s)000000000") / 1000000))
+debug_log "--- dashboard start (session=${SESSION_ID:-none}) ---"
+
 # Launch all providers in parallel
 for ((i=0; i<ITEM_COUNT; i++)); do
   CMD=$(jq -r --argjson i "$i" '.items[$i].command' "$CONFIG")
@@ -99,23 +115,40 @@ for ((i=0; i<ITEM_COUNT; i++)); do
         if [ "$AGE" -lt "$CACHE_TTL" ]; then
           # Cache hit
           cat "$CACHE_FILE" > "$RESULTS_DIR/$i.value.tmp"
-          echo -n "0" > "$RESULTS_DIR/$i.dur.tmp"
+          echo -n "0" > "$RESULTS_DIR/$i.durms.tmp"
+          echo -n "hit" > "$RESULTS_DIR/$i.cache.tmp"
+          echo -n "$AGE" > "$RESULTS_DIR/$i.age.tmp"
+          echo -n "$CACHE_TTL" > "$RESULTS_DIR/$i.ttl.tmp"
           mv "$RESULTS_DIR/$i.value.tmp" "$RESULTS_DIR/$i.value"
-          mv "$RESULTS_DIR/$i.dur.tmp" "$RESULTS_DIR/$i.dur"
+          mv "$RESULTS_DIR/$i.durms.tmp" "$RESULTS_DIR/$i.durms"
+          mv "$RESULTS_DIR/$i.cache.tmp" "$RESULTS_DIR/$i.cache"
+          mv "$RESULTS_DIR/$i.age.tmp" "$RESULTS_DIR/$i.age"
+          mv "$RESULTS_DIR/$i.ttl.tmp" "$RESULTS_DIR/$i.ttl"
           exit 0
         fi
       fi
     fi
 
     # Cache miss or no caching — run the provider
-    START_S=$(date +%s)
+    START_NS=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
     VALUE=$(timeout "${TIMEOUT}s" bash -c "$CMD" 2>/dev/null | tr -d '\n')
-    END_S=$(date +%s)
-    ELAPSED_S=$((END_S - START_S))
+    END_NS=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
+    ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
     echo -n "$VALUE" > "$RESULTS_DIR/$i.value.tmp"
-    echo -n "$ELAPSED_S" > "$RESULTS_DIR/$i.dur.tmp"
+    echo -n "$ELAPSED_MS" > "$RESULTS_DIR/$i.durms.tmp"
     mv "$RESULTS_DIR/$i.value.tmp" "$RESULTS_DIR/$i.value"
-    mv "$RESULTS_DIR/$i.dur.tmp" "$RESULTS_DIR/$i.dur"
+    mv "$RESULTS_DIR/$i.durms.tmp" "$RESULTS_DIR/$i.durms"
+
+    # Write debug metadata for collection after wait
+    if [ -n "$CACHE_DIR" ] && [ "$CACHE_TTL" -gt 0 ]; then
+      echo -n "miss" > "$RESULTS_DIR/$i.cache.tmp"
+      echo -n "$CACHE_TTL" > "$RESULTS_DIR/$i.ttl.tmp"
+      mv "$RESULTS_DIR/$i.cache.tmp" "$RESULTS_DIR/$i.cache"
+      mv "$RESULTS_DIR/$i.ttl.tmp" "$RESULTS_DIR/$i.ttl"
+    else
+      echo -n "no-cache" > "$RESULTS_DIR/$i.cache.tmp"
+      mv "$RESULTS_DIR/$i.cache.tmp" "$RESULTS_DIR/$i.cache"
+    fi
 
     # Write to cache (atomic via tmp+mv) — skip empty results so
     # transient failures don't suppress retries until TTL expires.
@@ -126,6 +159,29 @@ for ((i=0; i<ITEM_COUNT; i++)); do
   ) &
 done
 wait
+
+# Log per-provider debug info
+HIT_COUNT=0
+MISS_COUNT=0
+NOCACHE_COUNT=0
+for ((i=0; i<ITEM_COUNT; i++)); do
+  if [ -n "$DEBUG_LOG" ]; then
+    DLABEL=$(jq -r --argjson i "$i" '.items[$i].label' "$CONFIG")
+    DCACHE=""; [ -f "$RESULTS_DIR/$i.cache" ] && DCACHE=$(cat "$RESULTS_DIR/$i.cache")
+    DDUR="?"; [ -f "$RESULTS_DIR/$i.durms" ] && DDUR=$(cat "$RESULTS_DIR/$i.durms")
+    DAGE=""; [ -f "$RESULTS_DIR/$i.age" ] && DAGE=$(cat "$RESULTS_DIR/$i.age")
+    DTTL=""; [ -f "$RESULTS_DIR/$i.ttl" ] && DTTL=$(cat "$RESULTS_DIR/$i.ttl")
+    case "$DCACHE" in
+      hit)      HIT_COUNT=$((HIT_COUNT + 1)); debug_log "  $DLABEL: hit (ttl=${DTTL}, age=${DAGE}) → ${DDUR}ms" ;;
+      miss)     MISS_COUNT=$((MISS_COUNT + 1)); debug_log "  $DLABEL: miss (ttl=${DTTL}) → ${DDUR}ms" ;;
+      no-cache) NOCACHE_COUNT=$((NOCACHE_COUNT + 1)); debug_log "  $DLABEL: no-cache → ${DDUR}ms" ;;
+    esac
+  fi
+done
+
+DASH_END_MS=$(($(date +%s%N 2>/dev/null || echo "$(date +%s)000000000") / 1000000))
+DASH_TOTAL_MS=$((DASH_END_MS - DASH_START_MS))
+debug_log "--- dashboard done: ${DASH_TOTAL_MS}ms (${HIT_COUNT} hit, ${MISS_COUNT} miss, ${NOCACHE_COUNT} no-cache) ---"
 
 # Collect results in order — store label, value, duration separately for rendering
 LABELS=()
@@ -138,9 +194,11 @@ for ((i=0; i<ITEM_COUNT; i++)); do
 
   if [ -n "$VALUE" ]; then
     DUR=""
-    if [ "$NO_DURATION" != "1" ] && [ -f "$RESULTS_DIR/$i.dur" ]; then
-      SECS=$(cat "$RESULTS_DIR/$i.dur")
-      if [ "$SECS" -ge "$DURATION_THRESHOLD" ]; then
+    if [ "$NO_DURATION" != "1" ] && [ -f "$RESULTS_DIR/$i.durms" ]; then
+      MS=$(cat "$RESULTS_DIR/$i.durms")
+      THRESHOLD_MS=$((DURATION_THRESHOLD * 1000))
+      if [ "$MS" -ge "$THRESHOLD_MS" ]; then
+        SECS=$(( (MS + 500) / 1000 ))  # round to nearest second
         DUR="(${SECS}s)"
       fi
     fi
