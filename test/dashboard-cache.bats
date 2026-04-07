@@ -154,6 +154,43 @@ EOF
   [[ "$output" == *"second: $second"* ]]
 }
 
+@test "failed provider does not cache empty result" {
+  COUNTER="$TEST_HOME/counter"
+  echo "0" > "$COUNTER"
+
+  # Command that fails first time (outputs nothing), succeeds second time
+  cat > "$TEST_CONFIG" << EOF
+{"items": [{"label": "test", "command": "val=\$(( \$(cat $COUNTER) + 1 )); echo \$val > $COUNTER; if [ \$val -ge 2 ]; then echo ok; fi", "cache": 60}]}
+EOF
+
+  # First run — counter=1, outputs nothing (below threshold)
+  run_cached
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"test:"* ]]
+
+  # Second run — counter=2, should output "ok" (not stuck on cached empty)
+  run_cached
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"test: ok"* ]]
+}
+
+@test "cache TTL of 0 disables caching" {
+  COUNTER="$TEST_HOME/counter"
+  echo "0" > "$COUNTER"
+
+  cat > "$TEST_CONFIG" << EOF
+{"items": [{"label": "test", "command": "$(counter_cmd "$COUNTER")", "cache": 0}]}
+EOF
+
+  run_cached
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"test: 1"* ]]
+
+  run_cached
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"test: 2"* ]]
+}
+
 @test "mixed cached and uncached items" {
   COUNTER="$TEST_HOME/counter"
   echo "0" > "$COUNTER"

@@ -117,8 +117,9 @@ for ((i=0; i<ITEM_COUNT; i++)); do
     mv "$RESULTS_DIR/$i.value.tmp" "$RESULTS_DIR/$i.value"
     mv "$RESULTS_DIR/$i.dur.tmp" "$RESULTS_DIR/$i.dur"
 
-    # Write to cache (atomic via tmp+mv)
-    if [ -n "$CACHE_DIR" ] && [ "$CACHE_TTL" -gt 0 ]; then
+    # Write to cache (atomic via tmp+mv) — skip empty results so
+    # transient failures don't suppress retries until TTL expires.
+    if [ -n "$CACHE_DIR" ] && [ "$CACHE_TTL" -gt 0 ] && [ -n "$VALUE" ]; then
       KEY=$(cache_key "$i:$CMD")
       echo -n "$VALUE" > "$CACHE_DIR/$KEY.tmp" && mv "$CACHE_DIR/$KEY.tmp" "$CACHE_DIR/$KEY"
     fi
