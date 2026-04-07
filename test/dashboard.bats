@@ -32,7 +32,7 @@ EOF
   {"label": "b", "command": "echo two"}
 ]}
 EOF
-  run run_dashboard
+  HOOKERS_DASHBOARD_NO_DURATION=1 run run_dashboard
   [ "$status" -eq 0 ]
   [[ "$output" == *"a: one | b: two"* ]]
 }
