@@ -20,3 +20,15 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
 }
+
+@test "model provider reads HOOKERS_MODEL" {
+  HOOKERS_MODEL="openai/gpt-5.4" run hookers provider model
+  [ "$status" -eq 0 ]
+  [ "$output" = "openai/gpt-5.4" ]
+}
+
+@test "model provider falls back to provider and id" {
+  HOOKERS_MODEL_PROVIDER="openai" HOOKERS_MODEL_ID="gpt-5.4" run hookers provider model
+  [ "$status" -eq 0 ]
+  [ "$output" = "openai/gpt-5.4" ]
+}

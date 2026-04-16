@@ -1,8 +1,18 @@
   // {{name}} — {{description}}
   pi.on("before_agent_start", async (_event, ctx) => {
+    const envArgs: string[] = [];
     const sessionId = ctx.sessionManager.getSessionId();
-    const prefix = sessionId ? `export HOOKERS_SESSION_ID=${sessionId} && ` : "";
-    const result = await pi.exec("bash", ["-c", `${prefix}` + {{command_json}}]);
+    if (sessionId) envArgs.push(`HOOKERS_SESSION_ID=${sessionId}`);
+    if (ctx.cwd) envArgs.push(`HOOKERS_CWD=${ctx.cwd}`);
+    if (ctx.model) {
+      envArgs.push(`HOOKERS_MODEL_PROVIDER=${ctx.model.provider}`);
+      envArgs.push(`HOOKERS_MODEL_ID=${ctx.model.id}`);
+      envArgs.push(`HOOKERS_MODEL=${ctx.model.provider}/${ctx.model.id}`);
+    }
+    const result =
+      envArgs.length > 0
+        ? await pi.exec("env", [...envArgs, "bash", "-c", {{command_json}}])
+        : await pi.exec("bash", ["-c", {{command_json}}]);
     if (result.code === 0 && result.stdout.trim()) {
       return {
         message: {

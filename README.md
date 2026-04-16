@@ -57,6 +57,7 @@ The `dashboard` hook injects a compact status line into your agent's context on 
 ```json
 {
   "items": [
+    {"label": "model", "command": "hookers provider model"},
     {"label": "mail", "command": "hookers provider unread-mail"},
     {"label": "branch", "command": "hookers provider git-branch"},
     {"label": "gh-token", "command": "hookers provider gh-token-expiry"},
@@ -69,10 +70,10 @@ The `dashboard` hook injects a compact status line into your agent's context on 
 Output looks like:
 
 ```
-[dashboard] mail: 84 | branch: main | gh-token: 5d | dirty: 3 | time: 14:30 UTC
+[dashboard] model: openai/gpt-5.4 | mail: 84 | branch: main | gh-token: 5d | dirty: 3 | time: 14:30 UTC
 ```
 
-Providers run in parallel with per-item timeouts. Items that produce no output are silently skipped. See [escort](https://github.com/KnickKnackLabs/escort) for richer providers designed for agent workflows.
+When the hook runner provides model context (for example in pi), `hookers provider model` can render the active model. Providers run in parallel with per-item timeouts. Items that produce no output are silently skipped. See [escort](https://github.com/KnickKnackLabs/escort) for richer providers designed for agent workflows.
 
 ## Bundled providers
 
@@ -81,6 +82,7 @@ Providers run in parallel with per-item timeouts. Items that produce no output a
 | `hookers provider dirty-files` | count of uncommitted changes |
 | `hookers provider gh-token-expiry` | GitHub token days until expiry |
 | `hookers provider git-branch` | current git branch |
+| `hookers provider model` | active model from hook context |
 | `hookers provider time` | current time (UTC) |
 | `hookers provider unread-mail` | unread email count |
 

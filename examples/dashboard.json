@@ -1,5 +1,6 @@
 {
   "items": [
+    {"label": "model", "command": "hookers provider model"},
     {"label": "mail", "command": "hookers provider unread-mail"},
     {"label": "branch", "command": "hookers provider git-branch"},
     {"label": "gh-token", "command": "hookers provider gh-token-expiry"},

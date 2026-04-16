@@ -16,6 +16,15 @@ load dashboard-helpers
   [ -z "$output" ]
 }
 
+@test "dashboard renders configured model provider" {
+  cat > "$TEST_CONFIG" << 'EOF'
+{"items": [{"label": "model", "command": "hookers provider model"}]}
+EOF
+  HOOKERS_MODEL="openai/gpt-5.4" run run_dashboard
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[dashboard] model: openai/gpt-5.4"* ]]
+}
+
 @test "dashboard runs custom commands" {
   cat > "$TEST_CONFIG" << 'EOF'
 {"items": [{"label": "test", "command": "echo hello"}]}
@@ -23,6 +32,18 @@ EOF
   run run_dashboard
   [ "$status" -eq 0 ]
   [[ "$output" == *"[dashboard] test: hello"* ]]
+}
+
+@test "dashboard includes model when model provider is configured" {
+  cat > "$TEST_CONFIG" << 'EOF'
+{"items": [
+  {"label": "model", "command": "hookers provider model"},
+  {"label": "test", "command": "echo hello"}
+]}
+EOF
+  HOOKERS_MODEL="openai/gpt-5.4" HOOKERS_DASHBOARD_NO_DURATION=1 run run_dashboard
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[dashboard] model: openai/gpt-5.4 | test: hello"* ]]
 }
 
 @test "dashboard handles multiple items with separator" {

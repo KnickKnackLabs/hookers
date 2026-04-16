@@ -129,7 +129,7 @@ generate() {
   [[ "$output" == *'result.stdout'* ]]
 }
 
-@test "inject action passes session ID to command" {
+@test "inject action passes session context to command" {
   make_hook "dash" "before-prompt" "inject" "hookers dashboard"
   make_state "dash"
 
@@ -137,6 +137,9 @@ generate() {
   [ "$status" -eq 0 ]
   [[ "$output" == *'sessionManager.getSessionId()'* ]]
   [[ "$output" == *'HOOKERS_SESSION_ID'* ]]
+  [[ "$output" == *'HOOKERS_CWD'* ]]
+  [[ "$output" == *'HOOKERS_MODEL'* ]]
+  [[ "$output" == *'ctx.model'* ]]
 }
 
 @test "inject action JSON-escapes command with special characters" {
@@ -164,14 +167,14 @@ generate() {
   [[ "$output" == *'"hookers:my-hook"'* ]]
 }
 
-@test "inject action uses export for env so compound commands work" {
+@test "inject action uses env wrapper so compound commands work" {
   make_hook "dash" "before-prompt" "inject" "cmd1 && cmd2"
   make_state "dash"
 
   run generate
   [ "$status" -eq 0 ]
-  # Should use export, not inline VAR=val prefix
-  [[ "$output" == *'export HOOKERS_SESSION_ID'* ]]
+  [[ "$output" == *'pi.exec("env"'* ]]
+  [[ "$output" == *'"bash", "-c"'* ]]
 }
 
 @test "block action on before-compact returns cancel" {
